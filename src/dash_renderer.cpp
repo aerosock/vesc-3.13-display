@@ -209,15 +209,16 @@ void DashboardRenderer::renderHorizontalTachScreen(const DashTelemetry &telemetr
     // 2. Left Wing (Battery & Electrical)
     int leftX = 20, leftY = 62, leftW = 240;
 
-    // Battery %
+    // Battery % (flicker-free text padding)
     int curBat = (int)roundf(telemetry.battery_pct);
     if (curBat != _cache.battery_pct) {
         _cache.battery_pct = curBat;
-        _canvas->fillRect(leftX + leftW - 84, leftY + 8, 70, 26, COLOR_SURFACE);
         char batPctStr[16];
         snprintf(batPctStr, sizeof(batPctStr), "%d%%", curBat);
         _canvas->setTextColor((curBat > 25) ? COLOR_GREEN : (curBat > 15 ? COLOR_AMBER : COLOR_RED), COLOR_SURFACE);
+        _canvas->setTextPadding(80);
         _canvas->drawRightString(batPctStr, leftX + leftW - 16, leftY + 10, &fonts::Font4);
+        _canvas->setTextPadding(0);
 
         // Battery Bar Fill
         int bBarX = leftX + 16, bBarY = leftY + 44, bBarW = leftW - 32, bBarH = 14;
@@ -232,29 +233,42 @@ void DashboardRenderer::renderHorizontalTachScreen(const DashTelemetry &telemetr
         }
     }
 
-    // Voltage, Amps, Watts (only redraw when changed)
+    // Voltage, Amps, Watts (independent differential updates with zero-flicker text padding)
     int v_x10 = (int)roundf(telemetry.voltage * 10.0f);
-    int a_x10 = (int)roundf(telemetry.current_amps * 10.0f);
-    int p_w   = (int)roundf(telemetry.power_watts);
-    if (v_x10 != _cache.voltage_x10 || a_x10 != _cache.current_x10 || p_w != _cache.watts) {
+    if (v_x10 != _cache.voltage_x10) {
         _cache.voltage_x10 = v_x10;
-        _cache.current_x10 = a_x10;
-        _cache.watts = p_w;
-        _canvas->fillRect(leftX + 16, leftY + 80, leftW - 32, 136, COLOR_SURFACE);
-        char vStr[20], aStr[20], pStr[20];
+        char vStr[20];
         snprintf(vStr, sizeof(vStr), "%.1f V", telemetry.voltage);
+        _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(leftW - 32);
+        _canvas->drawString(vStr, leftX + 16, leftY + 84, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int a_x10 = (int)roundf(telemetry.current_amps * 10.0f);
+    if (a_x10 != _cache.current_x10) {
+        _cache.current_x10 = a_x10;
+        char aStr[20];
         snprintf(aStr, sizeof(aStr), "%.1f A", telemetry.current_amps);
+        _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+        _canvas->setTextPadding(leftW - 32);
+        _canvas->drawString(aStr, leftX + 16, leftY + 126, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int p_w = (int)roundf(telemetry.power_watts);
+    if (p_w != _cache.watts) {
+        _cache.watts = p_w;
+        char pStr[20];
         if (p_w >= 1000) {
             snprintf(pStr, sizeof(pStr), "%.2f kW", p_w / 1000.0f);
         } else {
             snprintf(pStr, sizeof(pStr), "%d W", p_w);
         }
-        _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-        _canvas->drawString(vStr, leftX + 16, leftY + 84, &fonts::Font4);
-        _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-        _canvas->drawString(aStr, leftX + 16, leftY + 126, &fonts::Font4);
         _canvas->setTextColor(COLOR_AMBER, COLOR_SURFACE);
+        _canvas->setTextPadding(leftW - 32);
         _canvas->drawString(pStr, leftX + 16, leftY + 168, &fonts::Font4);
+        _canvas->setTextPadding(0);
     }
 
     // 3. Center: Giant Speedometer (native Font8, 75px tall, crisp, no scaling blockiness)
@@ -281,37 +295,51 @@ void DashboardRenderer::renderHorizontalTachScreen(const DashTelemetry &telemetr
         _canvas->drawCenterString(modeNames[mIdx], cx, pillY + 7, &fonts::Font4);
     }
 
-    // 4. Right Wing: Thermals & Trip (only redraw when changed)
+    // 4. Right Wing: Thermals & Trip (independent differential updates with zero-flicker text padding)
     int rightX = 560, rightY = 62, rightW = 240;
     int mTemp = (int)roundf(telemetry.temp_motor);
-    int eTemp = (int)roundf(telemetry.temp_esc);
-    if (mTemp != _cache.temp_motor || eTemp != _cache.temp_esc) {
+    if (mTemp != _cache.temp_motor) {
         _cache.temp_motor = mTemp;
-        _cache.temp_esc = eTemp;
-        _canvas->fillRect(rightX + rightW - 84, rightY + 8, 70, 75, COLOR_SURFACE);
-        char mTempStr[16], eTempStr[16];
+        char mTempStr[16];
         snprintf(mTempStr, sizeof(mTempStr), "%d°C", mTemp);
-        snprintf(eTempStr, sizeof(eTempStr), "%d°C", eTemp);
         _canvas->setTextColor((mTemp > 75) ? COLOR_RED : COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(80);
         _canvas->drawRightString(mTempStr, rightX + rightW - 16, rightY + 10, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int eTemp = (int)roundf(telemetry.temp_esc);
+    if (eTemp != _cache.temp_esc) {
+        _cache.temp_esc = eTemp;
+        char eTempStr[16];
+        snprintf(eTempStr, sizeof(eTempStr), "%d°C", eTemp);
         _canvas->setTextColor((eTemp > 80) ? COLOR_RED : COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(80);
         _canvas->drawRightString(eTempStr, rightX + rightW - 16, rightY + 50, &fonts::Font4);
+        _canvas->setTextPadding(0);
     }
 
     // Trip & ODO
     int trip_x10 = (int)roundf(telemetry.trip_km * 10.0f);
-    int odo = (int)roundf(telemetry.odo_km);
-    if (trip_x10 != _cache.trip_x10 || odo != _cache.odo) {
+    if (trip_x10 != _cache.trip_x10) {
         _cache.trip_x10 = trip_x10;
-        _cache.odo = odo;
-        _canvas->fillRect(rightX + 16, rightY + 124, rightW - 32, 85, COLOR_SURFACE);
-        char tripStr[20], odoStr[24];
+        char tripStr[20];
         snprintf(tripStr, sizeof(tripStr), "%.1f km", telemetry.trip_km);
-        snprintf(odoStr, sizeof(odoStr), "ODO: %d km", odo);
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(rightW - 32);
         _canvas->drawString(tripStr, rightX + 16, rightY + 126, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int odo = (int)roundf(telemetry.odo_km);
+    if (odo != _cache.odo) {
+        _cache.odo = odo;
+        char odoStr[24];
+        snprintf(odoStr, sizeof(odoStr), "ODO: %d km", odo);
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+        _canvas->setTextPadding(rightW - 32);
         _canvas->drawString(odoStr, rightX + 16, rightY + 172, &fonts::Font2);
+        _canvas->setTextPadding(0);
     }
 
     // 5. Status ribbon & Uptime Clock
@@ -325,11 +353,12 @@ void DashboardRenderer::renderHorizontalTachScreen(const DashTelemetry &telemetr
     int uptime = (int)telemetry.uptime_sec;
     if (uptime != _cache.uptime) {
         _cache.uptime = uptime;
-        _canvas->fillRect(710, 302, 90, 16, COLOR_BG);
         char timeStr[16];
         snprintf(timeStr, sizeof(timeStr), "%02u:%02u:%02u", uptime / 3600, (uptime % 3600) / 60, uptime % 60);
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_BG);
+        _canvas->setTextPadding(90);
         _canvas->drawRightString(timeStr, 800, 303, &fonts::Font2);
+        _canvas->setTextPadding(0);
     }
 }
 
@@ -340,11 +369,12 @@ void DashboardRenderer::drawPreciseRpmBar(int x, int y, int w, int h, float rpm,
     int curRpm = (int)roundf(rpm);
     if (curRpm != _cache.rpm_val) {
         _cache.rpm_val = curRpm;
-        _canvas->fillRect(cx - 70, 56, 140, 26, COLOR_BG);
         char rpmStr[20];
         snprintf(rpmStr, sizeof(rpmStr), "%d RPM", curRpm);
         _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
+        _canvas->setTextPadding(140);
         _canvas->drawCenterString(rpmStr, cx, 58, &fonts::Font4);
+        _canvas->setTextPadding(0);
     }
 
     // 2. Differential Bar Fill
@@ -521,11 +551,12 @@ void DashboardRenderer::renderR1DialScreen(const DashTelemetry &telemetry) {
     int curRpm = (int)roundf(displayRpm);
     if (curRpm != _cache.rpm_val) {
         _cache.rpm_val = curRpm;
-        _canvas->fillRect(cx - 45, cy + 28, 90, 24, COLOR_SURFACE);
         char digRpm[16];
         snprintf(digRpm, sizeof(digRpm), "%d", curRpm);
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(90);
         _canvas->drawCenterString(digRpm, cx, cy + 30, &fonts::Font4);
+        _canvas->setTextPadding(0);
     }
 
     // 5. Right Cockpit Updates
@@ -561,11 +592,12 @@ void DashboardRenderer::renderR1DialScreen(const DashTelemetry &telemetry) {
     int uptime = (int)telemetry.uptime_sec;
     if (uptime != _cache.uptime) {
         _cache.uptime = uptime;
-        _canvas->fillRect(rX + rW - 90, rY + 10, 90, 18, COLOR_BG);
         char timeStr[16];
         snprintf(timeStr, sizeof(timeStr), "%02u:%02u:%02u", uptime / 3600, (uptime % 3600) / 60, uptime % 60);
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_BG);
+        _canvas->setTextPadding(90);
         _canvas->drawRightString(timeStr, rX + rW, rY + 10, &fonts::Font2);
+        _canvas->setTextPadding(0);
     }
 
     // Speed (crisp native Font8, 75px tall, 1:1 scale, zero blockiness, clean clear rect)
@@ -579,24 +611,31 @@ void DashboardRenderer::renderR1DialScreen(const DashTelemetry &telemetry) {
         _canvas->drawString(speedStr, rX + 15, 70, &fonts::Font8);
     }
 
-    // Power & Current (only redraw when changed)
+    // Power & Current (independent differential updates with zero-flicker text padding)
     int p_w = (int)roundf(telemetry.power_watts);
-    int a_x10 = (int)roundf(telemetry.current_amps * 10.0f);
-    if (p_w != _cache.watts || a_x10 != _cache.current_x10) {
+    if (p_w != _cache.watts) {
         _cache.watts = p_w;
-        _cache.current_x10 = a_x10;
-        _canvas->fillRect(rX + rW - 160, 78, 160, 70, COLOR_BG);
-        char pwrStr[24], ampStr[16];
+        char pwrStr[24];
         if (p_w >= 1000) {
             snprintf(pwrStr, sizeof(pwrStr), "%.2f kW", p_w / 1000.0f);
         } else {
             snprintf(pwrStr, sizeof(pwrStr), "%d W", p_w);
         }
-        snprintf(ampStr, sizeof(ampStr), "%.1f A", telemetry.current_amps);
         _canvas->setTextColor(COLOR_AMBER, COLOR_BG);
+        _canvas->setTextPadding(160);
         _canvas->drawRightString(pwrStr, rX + rW, 80, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int a_x10 = (int)roundf(telemetry.current_amps * 10.0f);
+    if (a_x10 != _cache.current_x10) {
+        _cache.current_x10 = a_x10;
+        char ampStr[16];
+        snprintf(ampStr, sizeof(ampStr), "%.1f A", telemetry.current_amps);
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_BG);
+        _canvas->setTextPadding(160);
         _canvas->drawRightString(ampStr, rX + rW, 116, &fonts::Font4);
+        _canvas->setTextPadding(0);
     }
 
     // 3 Bottom Telemetry Cards
@@ -604,50 +643,71 @@ void DashboardRenderer::renderR1DialScreen(const DashTelemetry &telemetry) {
 
     // Card 1: Battery % and Voltage
     int curBat = (int)roundf(telemetry.battery_pct);
-    int curVoltX10 = (int)roundf(telemetry.voltage * 10.0f);
-    if (curBat != _cache.battery_pct || curVoltX10 != _cache.voltage_x10) {
+    if (curBat != _cache.battery_pct) {
         _cache.battery_pct = curBat;
-        _cache.voltage_x10 = curVoltX10;
-        _canvas->fillRect(rX + 8, botY + 28, cardW - 16, 75, COLOR_SURFACE);
-        char batStr[16], voltStr[16];
+        char batStr[16];
         snprintf(batStr, sizeof(batStr), "%d%%", curBat);
-        snprintf(voltStr, sizeof(voltStr), "%.1f V", telemetry.voltage);
         _canvas->setTextColor((curBat > 25) ? COLOR_GREEN : (curBat > 15 ? COLOR_AMBER : COLOR_RED), COLOR_SURFACE);
+        _canvas->setTextPadding(cardW - 20);
         _canvas->drawString(batStr, rX + 12, botY + 30, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int curVoltX10 = (int)roundf(telemetry.voltage * 10.0f);
+    if (curVoltX10 != _cache.voltage_x10) {
+        _cache.voltage_x10 = curVoltX10;
+        char voltStr[16];
+        snprintf(voltStr, sizeof(voltStr), "%.1f V", telemetry.voltage);
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(cardW - 20);
         _canvas->drawString(voltStr, rX + 12, botY + 68, &fonts::Font4);
+        _canvas->setTextPadding(0);
     }
 
     // Card 2: Motor & ESC Temperatures
     int mTemp = (int)roundf(telemetry.temp_motor);
-    int eTemp = (int)roundf(telemetry.temp_esc);
-    if (mTemp != _cache.temp_motor || eTemp != _cache.temp_esc) {
+    if (mTemp != _cache.temp_motor) {
         _cache.temp_motor = mTemp;
-        _cache.temp_esc = eTemp;
-        _canvas->fillRect(rX + cardW + 18, botY + 28, cardW - 16, 75, COLOR_SURFACE);
-        char mTempStr[16], eTempStr[16];
+        char mTempStr[16];
         snprintf(mTempStr, sizeof(mTempStr), "M %d°C", mTemp);
-        snprintf(eTempStr, sizeof(eTempStr), "E %d°C", eTemp);
         _canvas->setTextColor((mTemp > 75) ? COLOR_RED : COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(cardW - 20);
         _canvas->drawString(mTempStr, rX + cardW + 24, botY + 30, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int eTemp = (int)roundf(telemetry.temp_esc);
+    if (eTemp != _cache.temp_esc) {
+        _cache.temp_esc = eTemp;
+        char eTempStr[16];
+        snprintf(eTempStr, sizeof(eTempStr), "E %d°C", eTemp);
         _canvas->setTextColor((eTemp > 80) ? COLOR_RED : COLOR_LIGHT_GRAY, COLOR_SURFACE);
+        _canvas->setTextPadding(cardW - 20);
         _canvas->drawString(eTempStr, rX + cardW + 24, botY + 68, &fonts::Font4);
+        _canvas->setTextPadding(0);
     }
 
     // Card 3: Trip Distance & ODO
     int tripX10 = (int)roundf(telemetry.trip_km * 10.0f);
-    int odo = (int)roundf(telemetry.odo_km);
-    if (tripX10 != _cache.trip_x10 || odo != _cache.odo) {
+    if (tripX10 != _cache.trip_x10) {
         _cache.trip_x10 = tripX10;
-        _cache.odo = odo;
-        _canvas->fillRect(rX + (cardW * 2) + 30, botY + 28, cardW - 16, 75, COLOR_SURFACE);
-        char tripStr[16], odoStr[20];
+        char tripStr[16];
         snprintf(tripStr, sizeof(tripStr), "%.1f km", telemetry.trip_km);
-        snprintf(odoStr, sizeof(odoStr), "ODO %d", odo);
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(cardW - 20);
         _canvas->drawString(tripStr, rX + (cardW * 2) + 36, botY + 30, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int odo = (int)roundf(telemetry.odo_km);
+    if (odo != _cache.odo) {
+        _cache.odo = odo;
+        char odoStr[20];
+        snprintf(odoStr, sizeof(odoStr), "ODO %d", odo);
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+        _canvas->setTextPadding(cardW - 20);
         _canvas->drawString(odoStr, rX + (cardW * 2) + 36, botY + 68, &fonts::Font2);
+        _canvas->setTextPadding(0);
     }
 }
 
