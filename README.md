@@ -1,3 +1,6 @@
+THIS IS FULL AI SLOP WARNING!!! BUT IT WORKS
+
+
 # Waveshare ESP32-S3-LCD-3.16 · eBike Dashboard for Flipsky 75100 V1
 
 Custom, high-refresh-rate eBike dashboard running on the **Waveshare ESP32-S3-LCD-3.16** (820x320 landscape ST7701 RGB display), communicating with a **Flipsky 75100 V1 Basic** (VESC-compatible controller) over UART.
