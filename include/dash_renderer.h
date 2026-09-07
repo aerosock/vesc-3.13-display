@@ -37,11 +37,15 @@ private:
     void renderHorizontalBarStyle(const DashTelemetry &telemetry);
     void drawPreciseDutyBar(int x, int y, int w, int h, float duty, float max_duty);
 
-    // Screen 1: Trip & Energy Statistics Dashboard
-    void initTripStatsScreen(const DashTelemetry &telemetry);
-    void renderTripStatsScreen(const DashTelemetry &telemetry);
+    // Screen 1: Energy & Battery Analytics Dashboard
+    void initEnergyStatsScreen(const DashTelemetry &telemetry);
+    void renderEnergyStatsScreen(const DashTelemetry &telemetry);
 
-    // Screen 2: Interactive Settings Menu System
+    // Screen 2: Power, Speed & Dynamics Analytics Dashboard
+    void initPerfStatsScreen(const DashTelemetry &telemetry);
+    void renderPerfStatsScreen(const DashTelemetry &telemetry);
+
+    // Screen 3: Interactive Settings Menu System
     void initSettingsScreen(const DashTelemetry &telemetry);
     void renderSettingsScreen(const DashTelemetry &telemetry);
     void renderRootMenu();
@@ -50,6 +54,7 @@ private:
 
     // Common UI Helpers
     void drawCard(int x, int y, int w, int h, uint16_t bg, uint16_t border);
+    void drawValWithUnit(int x, int y, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol);
 
     // Screen State
     DashboardScreen _active_screen;

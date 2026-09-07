@@ -26,6 +26,8 @@ void ButtonHandler::update() {
             _btn2.is_down = true;
             _btn1.press_start_ms = now;
             _btn2.press_start_ms = now;
+            _btn1.long_press_fired = true; // Prevent trailing short clicks on release
+            _btn2.long_press_fired = true;
             _pending_action = NAV_BOTH_PRESSED;
             return;
         }
@@ -44,7 +46,7 @@ void ButtonHandler::updateNormalMode() {
     bool raw1 = (digitalRead(_btn1.pin) == LOW);
     bool raw2 = (digitalRead(_btn2.pin) == LOW);
 
-    // Button 1 (SCL / GPIO 7)
+    // Button 1 (SCL / GPIO 7) - UP / PREV / (Long: Open Settings)
     if (raw1) {
         if (!_btn1.is_down) {
             _btn1.is_down = true;
@@ -66,14 +68,14 @@ void ButtonHandler::updateNormalMode() {
         }
     }
 
-    // Button 2 (SDA / GPIO 15)
+    // Button 2 (SDA / GPIO 15) - DOWN / NEXT / (Long: Exit / Trip Reset)
     if (raw2) {
         if (!_btn2.is_down) {
             _btn2.is_down = true;
             _btn2.press_start_ms = now;
             _btn2.long_press_fired = false;
         } else {
-            if (!_btn2.long_press_fired && (now - _btn2.press_start_ms >= 600)) {
+            if (!_btn2.long_press_fired && (now - _btn2.press_start_ms >= 500)) {
                 _btn2.long_press_fired = true;
                 _pending_action = NAV_BTN2_LONG;
             }
@@ -90,20 +92,20 @@ void ButtonHandler::updateNormalMode() {
 }
 
 // In Edit Mode:
-// BTN1 = Decrement (-), BTN2 = Increment (+)
+// BTN1 = UP / Increment (+), BTN2 = DOWN / Decrement (-)
 // Holding down accelerates the repeating rate!
 void ButtonHandler::updateEditMode() {
     uint32_t now = millis();
     bool raw1 = (digitalRead(_btn1.pin) == LOW);
     bool raw2 = (digitalRead(_btn2.pin) == LOW);
 
-    // BTN1 (Decrement)
+    // BTN1 (UP / Increment +)
     if (raw1) {
         if (!_btn1.is_down) {
             _btn1.is_down = true;
             _btn1.press_start_ms = now;
             _btn1.last_repeat_ms = now;
-            _pending_action = NAV_EDIT_DEC;
+            _pending_action = NAV_EDIT_INC;
         } else {
             uint32_t hold_time = now - _btn1.press_start_ms;
             uint32_t repeat_interval = 160; // Base speed
@@ -116,20 +118,20 @@ void ButtonHandler::updateEditMode() {
 
             if (hold_time >= 350 && (now - _btn1.last_repeat_ms >= repeat_interval)) {
                 _btn1.last_repeat_ms = now;
-                _pending_action = NAV_EDIT_DEC;
+                _pending_action = NAV_EDIT_INC;
             }
         }
     } else {
         _btn1.is_down = false;
     }
 
-    // BTN2 (Increment)
+    // BTN2 (DOWN / Decrement -)
     if (raw2) {
         if (!_btn2.is_down) {
             _btn2.is_down = true;
             _btn2.press_start_ms = now;
             _btn2.last_repeat_ms = now;
-            _pending_action = NAV_EDIT_INC;
+            _pending_action = NAV_EDIT_DEC;
         } else {
             uint32_t hold_time = now - _btn2.press_start_ms;
             uint32_t repeat_interval = 160; // Base speed
@@ -142,7 +144,7 @@ void ButtonHandler::updateEditMode() {
 
             if (hold_time >= 350 && (now - _btn2.last_repeat_ms >= repeat_interval)) {
                 _btn2.last_repeat_ms = now;
-                _pending_action = NAV_EDIT_INC;
+                _pending_action = NAV_EDIT_DEC;
             }
         }
     } else {

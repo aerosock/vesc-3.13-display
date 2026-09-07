@@ -107,38 +107,48 @@ void loop() {
             Renderer.handleMenuNav(nav, telemetry);
         } else {
             switch (nav) {
-                case NAV_BTN1_SHORT: // Cycle Screens: Ride Dash -> Trip Stats -> Settings Menu -> Ride Dash
-                    telemetry.screen = (DashboardScreen)(((int)telemetry.screen + 1) % SCREEN_COUNT);
-                    if (telemetry.screen == SCREEN_RIDE_DASH && Settings.get().dash_style == STYLE_ANALOG_DIAL) {
-                        Renderer.triggerNeedleSweep();
+                case NAV_BTN1_SHORT: // Previous Screen (Up): Ride Dash <-> Perf Stats <-> Energy Stats
+                    {
+                        int cur = (int)telemetry.screen;
+                        telemetry.screen = (DashboardScreen)((cur - 1 + 3) % 3);
+                        if (telemetry.screen == SCREEN_RIDE_DASH && Settings.get().dash_style == STYLE_ANALOG_DIAL) {
+                            Renderer.triggerNeedleSweep();
+                        }
+                        Serial.printf("[NAV] BTN1 Short: Switched to Screen ID %d\n", (int)telemetry.screen);
                     }
-                    Serial.printf("[NAV] Switched to Screen ID: %d\n", (int)telemetry.screen);
                     break;
 
-                case NAV_BTN2_SHORT: // Quick Toggle: Battery Profile (Profile 1 <-> Profile 2)
+                case NAV_BTN2_SHORT: // Next Screen (Down): Ride Dash -> Energy Stats -> Perf Stats -> Ride Dash
+                    {
+                        int cur = (int)telemetry.screen;
+                        telemetry.screen = (DashboardScreen)((cur + 1) % 3);
+                        if (telemetry.screen == SCREEN_RIDE_DASH && Settings.get().dash_style == STYLE_ANALOG_DIAL) {
+                            Renderer.triggerNeedleSweep();
+                        }
+                        Serial.printf("[NAV] BTN2 Short: Switched to Screen ID %d\n", (int)telemetry.screen);
+                    }
+                    break;
+
+                case NAV_BTN1_LONG: // Button 1 Long Press: Open Settings Menu directly
+                    telemetry.screen = SCREEN_SETTINGS_MENU;
+                    Serial.println("[NAV] BTN1 Long: Opened Settings Menu");
+                    break;
+
+                case NAV_BTN2_LONG: // Button 2 Long Press: Reset Trip Odometer & Statistics
+                    telemetry.trip_km = 0.0f;
+                    telemetry.stats.reset();
+                    Serial.println("[NAV] BTN2 Long: Reset Trip Odometer and Statistics to 0.0");
+                    break;
+
+                case NAV_BOTH_PRESSED: // BTN1 + BTN2: Fast Toggle Active Battery Profile
                     {
                         uint8_t next_p = (Settings.get().active_battery_profile == 0) ? 1 : 0;
                         Settings.get().active_battery_profile = next_p;
                         Battery.setActiveProfile(next_p);
                         Settings.save();
-                        Serial.printf("[NAV] Fast Toggled Battery Profile: %d (%s)\n", next_p, Battery.getProfile(next_p).name);
+                        Serial.printf("[NAV] BTN1+BTN2 Short: Fast Toggled Battery Profile: %d (%s)\n",
+                                      next_p, Battery.getProfile(next_p).name);
                     }
-                    break;
-
-                case NAV_BTN1_LONG: // Button 1 Long Press: Needle Sweep on Dash or Jump to Settings
-                    if (telemetry.screen == SCREEN_RIDE_DASH && Settings.get().dash_style == STYLE_ANALOG_DIAL) {
-                        Renderer.triggerNeedleSweep();
-                        Serial.println("[NAV] Button 1 Long: Needle Sweep Triggered");
-                    } else {
-                        telemetry.screen = SCREEN_SETTINGS_MENU;
-                        Serial.println("[NAV] Button 1 Long: Switched to Settings Menu");
-                    }
-                    break;
-
-                case NAV_BTN2_LONG: // Button 2 Long Press: Reset Trip & Statistics
-                    telemetry.trip_km = 0.0f;
-                    telemetry.stats.reset();
-                    Serial.println("[NAV] Button 2 Long: Trip Odometer and Statistics Reset to 0.0");
                     break;
 
                 default:

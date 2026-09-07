@@ -2,11 +2,12 @@
 
 #include <Arduino.h>
 
-// Top-Level Screens (Cycled via Button 1)
+// Top-Level Screens
 enum DashboardScreen {
     SCREEN_RIDE_DASH     = 0,  // Main Ride Dashboard (renders active style: Analog or Horizontal)
-    SCREEN_TRIP_STATS    = 1,  // Trip & Energy Statistics Dashboard
-    SCREEN_SETTINGS_MENU = 2,  // Interactive Settings & Diagnostics Menu
+    SCREEN_ENERGY_STATS  = 1,  // Energy & Battery Analytics Dashboard
+    SCREEN_PERF_STATS    = 2,  // Power, Speed & Dynamics Analytics Dashboard
+    SCREEN_SETTINGS_MENU = 3,  // Interactive Settings & Diagnostics Menu
     SCREEN_COUNT
 };
 

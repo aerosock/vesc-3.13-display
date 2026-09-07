@@ -52,6 +52,15 @@ void DashboardRenderer::drawCard(int x, int y, int w, int h, uint16_t bg, uint16
     _canvas->drawRoundRect(x, y, w, h, 8, border);
 }
 
+// Renders a large Font6 number with an aligned Font4 unit (Font6 has no letters in LovyanGFX)
+void DashboardRenderer::drawValWithUnit(int x, int y, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol) {
+    _canvas->setTextColor(numCol, COLOR_BG);
+    _canvas->drawString(numStr, x, y, &fonts::Font6);
+    int nw = _canvas->textWidth(numStr, &fonts::Font6);
+    _canvas->setTextColor(unitCol, COLOR_BG);
+    _canvas->drawString(unitStr, x + nw + 6, y + 16, &fonts::Font4);
+}
+
 void DashboardRenderer::triggerNeedleSweep() {
     _is_sweeping = true;
     _sweep_phase = 0;
@@ -120,13 +129,22 @@ void DashboardRenderer::render(const DashTelemetry &telemetry) {
             renderRideDashboard(telemetry);
             break;
 
-        case SCREEN_TRIP_STATS:
+        case SCREEN_ENERGY_STATS:
             if (_screen_dirty) {
                 _canvas->fillScreen(COLOR_BG);
-                initTripStatsScreen(telemetry);
+                initEnergyStatsScreen(telemetry);
                 _screen_dirty = false;
             }
-            renderTripStatsScreen(telemetry);
+            renderEnergyStatsScreen(telemetry);
+            break;
+
+        case SCREEN_PERF_STATS:
+            if (_screen_dirty) {
+                _canvas->fillScreen(COLOR_BG);
+                initPerfStatsScreen(telemetry);
+                _screen_dirty = false;
+            }
+            renderPerfStatsScreen(telemetry);
             break;
 
         case SCREEN_SETTINGS_MENU:
@@ -134,7 +152,7 @@ void DashboardRenderer::render(const DashTelemetry &telemetry) {
                 _canvas->fillScreen(COLOR_BG);
                 initSettingsScreen(telemetry);
                 _screen_dirty = false;
-                _menu_dirty = true; // Trigger initial menu list and details draw
+                _menu_dirty = true;
             }
             renderSettingsScreen(telemetry);
             break;
@@ -173,7 +191,8 @@ void DashboardRenderer::renderRideDashboard(const DashTelemetry &telemetry) {
 // Needle points RIGHT into the display.
 // 0% Duty at +63° (+1.10 rad, bottom-right).
 // 120% Duty at -63° (-1.10 rad, top-right).
-// All dial numbers (0, 20, 40, 60, 80, 100, FW) are on the RIGHT side of cx!
+// Dial numbers (0, 20, 40, 60, 80, 100, FW) are on the RIGHT side of cx!
+// Digital duty readout is at top-left (x=18, y=14) completely clear of needle sweep!
 // ==============================================================================
 void DashboardRenderer::initLeftHugAnalogStyle(const DashTelemetry &telemetry) {
     int cx = 25, cy = 160;
@@ -228,23 +247,19 @@ void DashboardRenderer::initLeftHugAnalogStyle(const DashTelemetry &telemetry) {
         }
     }
 
-    // 3. Dial Label
-    _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_BG);
-    _canvas->drawString("DUTY", 45, 126, &fonts::Font4);
-
-    // 4. Center Hub Cap
+    // 3. Center Hub Cap (Base)
     _canvas->fillCircle(cx, cy, 26, COLOR_SURFACE);
     _canvas->drawCircle(cx, cy, 26, COLOR_BORDER);
     _canvas->fillCircle(cx, cy, 10, COLOR_BG);
 
-    // 5. Right Cockpit - Top Ribbon
+    // 4. Right Cockpit - Top Ribbon
     _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
     const char *pName = (telemetry.battery_profile_id == 0) ? "[B1 FRESH]" : "[B2 DAILY]";
     _canvas->drawString(pName, 245, 12, &fonts::Font4);
 
     _canvas->drawFastHLine(235, 40, 575, COLOR_BORDER);
 
-    // 6. Right Cockpit - Mid-Deck Static Labels
+    // 5. Right Cockpit - Mid-Deck Static Labels
     _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_BG);
     _canvas->drawString("POWER", 245, 52, &fonts::Font4);
     _canvas->drawString("PHASE", 245, 138, &fonts::Font4);
@@ -254,7 +269,7 @@ void DashboardRenderer::initLeftHugAnalogStyle(const DashTelemetry &telemetry) {
     _canvas->drawString("BATTERY", 660, 52, &fonts::Font4);
     _canvas->drawString("ENERGY", 660, 138, &fonts::Font4);
 
-    // 7. Right Cockpit - Bottom Strip Divider
+    // 6. Right Cockpit - Bottom Strip Divider
     _canvas->drawFastHLine(235, 230, 575, COLOR_BORDER);
 }
 
@@ -301,25 +316,25 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
 
     drawAnalogNeedle(cx, cy, 115, needle_angle, COLOR_NEEDLE);
 
-    // 3. Hub Cap Redraw
+    // 3. Hub Cap Redraw ON TOP of needle base (Guarantees zero clipping)
     _canvas->fillCircle(cx, cy, 26, COLOR_SURFACE);
     _canvas->drawCircle(cx, cy, 26, COLOR_BORDER);
     _canvas->fillCircle(cx, cy, 10, COLOR_BG);
 
-    // 4. Digital Duty Cycle Readout
+    // 4. Digital Duty Cycle Readout at Top-Left (x=18, y=14) - Completely Clear of Needle Sweep!
     int duty_int = (int)roundf(currentDuty);
     if (duty_int != _cache.duty_x10) {
         _cache.duty_x10 = duty_int;
-        char dutyBuf[16];
+        char dutyBuf[20];
         if (duty_int > 100) {
-            snprintf(dutyBuf, sizeof(dutyBuf), "%d%% FW", duty_int);
+            snprintf(dutyBuf, sizeof(dutyBuf), "DUTY %d%% FW", duty_int);
             _canvas->setTextColor(COLOR_RED, COLOR_BG);
         } else {
-            snprintf(dutyBuf, sizeof(dutyBuf), "%d%%", duty_int);
+            snprintf(dutyBuf, sizeof(dutyBuf), "DUTY %d%%", duty_int);
             _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
         }
-        _canvas->setTextPadding(90);
-        _canvas->drawString(dutyBuf, 45, 154, &fonts::Font4);
+        _canvas->setTextPadding(140);
+        _canvas->drawString(dutyBuf, 18, 14, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
 
@@ -380,51 +395,44 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
     int curWatts = (int)roundf(telemetry.power_watts);
     if (curWatts != _cache.watts) {
         _cache.watts = curWatts;
-        char wStr[24];
+        _canvas->fillRect(245, 80, 180, 48, COLOR_BG);
+        char numStr[16];
         if (curWatts >= 1000) {
-            snprintf(wStr, sizeof(wStr), "%.2f kW", curWatts / 1000.0f);
+            snprintf(numStr, sizeof(numStr), "%.2f", curWatts / 1000.0f);
+            drawValWithUnit(245, 80, numStr, "kW", COLOR_AMBER, COLOR_LIGHT_GRAY);
         } else {
-            snprintf(wStr, sizeof(wStr), "%d W", curWatts);
+            snprintf(numStr, sizeof(numStr), "%d", curWatts);
+            drawValWithUnit(245, 80, numStr, "W", COLOR_AMBER, COLOR_LIGHT_GRAY);
         }
-        _canvas->setTextColor(COLOR_AMBER, COLOR_BG);
-        _canvas->setTextPadding(160);
-        _canvas->drawString(wStr, 245, 80, &fonts::Font6);
-        _canvas->setTextPadding(0);
     }
 
     int curPhaseX10 = (int)roundf(telemetry.phase_amps * 10.0f);
     if (curPhaseX10 != _cache.phase_x10) {
         _cache.phase_x10 = curPhaseX10;
-        char pStr[20];
-        snprintf(pStr, sizeof(pStr), "%.0f A", telemetry.phase_amps);
-        _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
-        _canvas->setTextPadding(160);
-        _canvas->drawString(pStr, 245, 166, &fonts::Font6);
-        _canvas->setTextPadding(0);
+        _canvas->fillRect(245, 166, 180, 48, COLOR_BG);
+        char numStr[16];
+        snprintf(numStr, sizeof(numStr), "%.0f", telemetry.phase_amps);
+        drawValWithUnit(245, 166, numStr, "A", COLOR_WHITE, COLOR_LIGHT_GRAY);
     }
 
-    // 8. Right Flank: Battery % and Remaining Wh
+    // 8. Right Flank: Battery % and Remaining Wh (with explicit units)
     int curBat = (int)roundf(telemetry.battery_pct);
     if (curBat != _cache.battery_pct) {
         _cache.battery_pct = curBat;
-        char bStr[16];
-        snprintf(bStr, sizeof(bStr), "%d %%", curBat);
+        _canvas->fillRect(660, 80, 150, 48, COLOR_BG);
+        char numStr[16];
+        snprintf(numStr, sizeof(numStr), "%d", curBat);
         uint16_t bCol = (curBat > 25) ? COLOR_GREEN : (curBat > 15 ? COLOR_AMBER : COLOR_RED);
-        _canvas->setTextColor(bCol, COLOR_BG);
-        _canvas->setTextPadding(150);
-        _canvas->drawString(bStr, 660, 80, &fonts::Font6);
-        _canvas->setTextPadding(0);
+        drawValWithUnit(660, 80, numStr, "%", bCol, bCol);
     }
 
     int curRemWh = (int)roundf(telemetry.remaining_wh);
     if (curRemWh != _cache.remaining_wh) {
         _cache.remaining_wh = curRemWh;
-        char whStr[20];
-        snprintf(whStr, sizeof(whStr), "%d Wh", curRemWh);
-        _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
-        _canvas->setTextPadding(150);
-        _canvas->drawString(whStr, 660, 166, &fonts::Font6);
-        _canvas->setTextPadding(0);
+        _canvas->fillRect(660, 166, 150, 48, COLOR_BG);
+        char numStr[16];
+        snprintf(numStr, sizeof(numStr), "%d", curRemWh);
+        drawValWithUnit(660, 166, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
     }
 
     // 9. Bottom Strip: Trip Distance, Clean Thermals, Battery SoH
@@ -461,18 +469,11 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
 }
 
 // ==============================================================================
-// STYLE B: HORIZONTAL DUTY BAR CLUSTER (Card-Free Spacious Layout)
+// STYLE B: HORIZONTAL DUTY BAR CLUSTER (Top Duty Bar, Bottom Profile/Voltage)
 // ==============================================================================
 void DashboardRenderer::initHorizontalBarStyle(const DashTelemetry &telemetry) {
-    // 1. Top Ribbon
-    _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
-    const char *pName = (telemetry.battery_profile_id == 0) ? "[B1 FRESH]" : "[B2 DAILY]";
-    _canvas->drawString(pName, 25, 12, &fonts::Font4);
-
-    _canvas->drawFastHLine(20, 38, 780, COLOR_BORDER);
-
-    // 2. Horizontal Duty Bar Track (x=20, y=44, w=780, h=24)
-    int bx = 20, by = 44, bw = 780, bh = 24;
+    // 1. Horizontal Duty Bar Track placed right at the top (x=20, y=8, w=780, h=18)
+    int bx = 20, by = 8, bw = 780, bh = 18;
     _canvas->fillRoundRect(bx, by, bw, bh, 4, COLOR_SURFACE);
     _canvas->drawRoundRect(bx, by, bw, bh, 4, COLOR_BORDER);
 
@@ -480,30 +481,30 @@ void DashboardRenderer::initHorizontalBarStyle(const DashTelemetry &telemetry) {
     int fw_mark = bx + 650;
     _canvas->drawFastVLine(fw_mark, by, bh, COLOR_RED);
 
-    // Scale Ticks
+    // Scale Ticks & Font4 Labels at y=28 (Clear of all metrics below!)
     for (int i = 0; i <= 100; i += 20) {
         int tx = bx + (int)((float)i / 120.0f * (float)bw);
-        _canvas->drawFastVLine(tx, by + bh, 4, COLOR_MUTED_GRAY);
+        _canvas->drawFastVLine(tx, by + bh, 3, COLOR_MUTED_GRAY);
         char sbuf[8];
         snprintf(sbuf, sizeof(sbuf), "%d%%", i);
         _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_BG);
-        _canvas->drawCenterString(sbuf, tx, by + bh + 4, &fonts::Font4);
+        _canvas->drawCenterString(sbuf, tx, by + bh + 3, &fonts::Font4);
     }
-    _canvas->drawFastVLine(fw_mark, by + bh, 4, COLOR_RED);
+    _canvas->drawFastVLine(fw_mark, by + bh, 3, COLOR_RED);
     _canvas->setTextColor(COLOR_RED, COLOR_BG);
-    _canvas->drawCenterString("FW", fw_mark + 35, by + bh + 4, &fonts::Font4);
+    _canvas->drawCenterString("FW", fw_mark + 35, by + bh + 3, &fonts::Font4);
 
-    // 3. Mid-Deck Static Labels
+    // 2. Mid-Deck Static Labels
     _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_BG);
-    _canvas->drawString("POWER", 30, 84, &fonts::Font4);
-    _canvas->drawString("PHASE", 30, 156, &fonts::Font4);
+    _canvas->drawString("POWER", 30, 64, &fonts::Font4);
+    _canvas->drawString("PHASE", 30, 144, &fonts::Font4);
 
-    _canvas->drawCenterString("KM/H", 410, 152, &fonts::Font4);
+    _canvas->drawCenterString("KM/H", 410, 144, &fonts::Font4);
 
-    _canvas->drawString("BATTERY", 660, 84, &fonts::Font4);
-    _canvas->drawString("ENERGY", 660, 156, &fonts::Font4);
+    _canvas->drawString("BATTERY", 660, 64, &fonts::Font4);
+    _canvas->drawString("ENERGY", 660, 144, &fonts::Font4);
 
-    // 4. Bottom Divider
+    // 3. Bottom Divider
     _canvas->drawFastHLine(20, 236, 780, COLOR_BORDER);
 
     _cache.duty_fill_w = -1;
@@ -533,40 +534,11 @@ void DashboardRenderer::drawPreciseDutyBar(int x, int y, int w, int h, float dut
 }
 
 void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry) {
-    // 1. Top Ribbon
-    if (telemetry.battery_profile_id != _cache.batt_prof) {
-        _cache.batt_prof = telemetry.battery_profile_id;
-        const char *pName = (telemetry.battery_profile_id == 0) ? "[B1 FRESH]" : "[B2 DAILY]";
-        _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
-        _canvas->setTextPadding(140);
-        _canvas->drawString(pName, 25, 12, &fonts::Font4);
-        _canvas->setTextPadding(0);
-    }
-
-    int curVoltX10 = (int)roundf(telemetry.voltage * 10.0f);
-    if (curVoltX10 != _cache.voltage_x10) {
-        _cache.voltage_x10 = curVoltX10;
-        char vStr[20];
-        snprintf(vStr, sizeof(vStr), "%.1f V", telemetry.voltage);
-        _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
-        _canvas->setTextPadding(140);
-        _canvas->drawCenterString(vStr, 410, 12, &fonts::Font4);
-        _canvas->setTextPadding(0);
-    }
-
-    if (telemetry.vesc_connected != _cache.vesc_connected) {
-        _cache.vesc_connected = telemetry.vesc_connected;
-        _canvas->setTextColor(telemetry.vesc_connected ? COLOR_GREEN : COLOR_RED, COLOR_BG);
-        _canvas->setTextPadding(110);
-        _canvas->drawRightString(telemetry.vesc_connected ? "● VESC" : "○ NO VESC", 800, 12, &fonts::Font4);
-        _canvas->setTextPadding(0);
-    }
-
-    // 2. Duty Cycle Bar
+    // 1. Top Duty Cycle Bar (x=20, y=8, w=780, h=18)
     float currentDuty = _is_sweeping ? _sweep_duty : telemetry.duty_cycle_pct;
-    drawPreciseDutyBar(20, 44, 780, 24, currentDuty, 120.0f);
+    drawPreciseDutyBar(20, 8, 780, 18, currentDuty, 120.0f);
 
-    // 3. Giant Speedometer (Font8, 75px)
+    // 2. Giant Speedometer (Font8, 75px, at y=72 - 60% mark is completely clear!)
     int curSpeed = (int)roundf(telemetry.speed_kmh);
     if (curSpeed != _cache.speed) {
         _cache.speed = curSpeed;
@@ -574,7 +546,7 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         snprintf(spdStr, sizeof(spdStr), "%d", curSpeed);
         _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
         _canvas->setTextPadding(180);
-        _canvas->drawCenterString(spdStr, 410, 76, &fonts::Font8);
+        _canvas->drawCenterString(spdStr, 410, 72, &fonts::Font8);
         _canvas->setTextPadding(0);
     }
 
@@ -585,70 +557,83 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         snprintf(rStr, sizeof(rStr), "EST RANGE: %d km", curRange);
         _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
         _canvas->setTextPadding(220);
-        _canvas->drawCenterString(rStr, 410, 186, &fonts::Font4);
+        _canvas->drawCenterString(rStr, 410, 180, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
 
-    // 4. Left Flank: Power & Phase Current
+    // 3. Left Flank: Power & Phase Current (with explicit Font4 units)
     int curWatts = (int)roundf(telemetry.power_watts);
     if (curWatts != _cache.watts) {
         _cache.watts = curWatts;
-        char wStr[24];
+        _canvas->fillRect(30, 92, 170, 48, COLOR_BG);
+        char numStr[16];
         if (curWatts >= 1000) {
-            snprintf(wStr, sizeof(wStr), "%.2f kW", curWatts / 1000.0f);
+            snprintf(numStr, sizeof(numStr), "%.2f", curWatts / 1000.0f);
+            drawValWithUnit(30, 92, numStr, "kW", COLOR_AMBER, COLOR_LIGHT_GRAY);
         } else {
-            snprintf(wStr, sizeof(wStr), "%d W", curWatts);
+            snprintf(numStr, sizeof(numStr), "%d", curWatts);
+            drawValWithUnit(30, 92, numStr, "W", COLOR_AMBER, COLOR_LIGHT_GRAY);
         }
-        _canvas->setTextColor(COLOR_AMBER, COLOR_BG);
-        _canvas->setTextPadding(160);
-        _canvas->drawString(wStr, 30, 108, &fonts::Font6);
-        _canvas->setTextPadding(0);
     }
 
     int curPhaseX10 = (int)roundf(telemetry.phase_amps * 10.0f);
     if (curPhaseX10 != _cache.phase_x10) {
         _cache.phase_x10 = curPhaseX10;
-        char pStr[20];
-        snprintf(pStr, sizeof(pStr), "%.0f A", telemetry.phase_amps);
-        _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
-        _canvas->setTextPadding(160);
-        _canvas->drawString(pStr, 30, 180, &fonts::Font6);
-        _canvas->setTextPadding(0);
+        _canvas->fillRect(30, 168, 170, 48, COLOR_BG);
+        char numStr[16];
+        snprintf(numStr, sizeof(numStr), "%.0f", telemetry.phase_amps);
+        drawValWithUnit(30, 168, numStr, "A", COLOR_WHITE, COLOR_LIGHT_GRAY);
     }
 
-    // 5. Right Flank: Battery % & Remaining Wh
+    // 4. Right Flank: Battery % & Remaining Wh (with explicit Font4 units)
     int curBat = (int)roundf(telemetry.battery_pct);
     if (curBat != _cache.battery_pct) {
         _cache.battery_pct = curBat;
-        char bStr[16];
-        snprintf(bStr, sizeof(bStr), "%d %%", curBat);
+        _canvas->fillRect(660, 92, 150, 48, COLOR_BG);
+        char numStr[16];
+        snprintf(numStr, sizeof(numStr), "%d", curBat);
         uint16_t bCol = (curBat > 25) ? COLOR_GREEN : (curBat > 15 ? COLOR_AMBER : COLOR_RED);
-        _canvas->setTextColor(bCol, COLOR_BG);
-        _canvas->setTextPadding(150);
-        _canvas->drawString(bStr, 660, 108, &fonts::Font6);
-        _canvas->setTextPadding(0);
+        drawValWithUnit(660, 92, numStr, "%", bCol, bCol);
     }
 
     int curRemWh = (int)roundf(telemetry.remaining_wh);
     if (curRemWh != _cache.remaining_wh) {
         _cache.remaining_wh = curRemWh;
-        char whStr[20];
-        snprintf(whStr, sizeof(whStr), "%d Wh", curRemWh);
-        _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
-        _canvas->setTextPadding(150);
-        _canvas->drawString(whStr, 660, 180, &fonts::Font6);
-        _canvas->setTextPadding(0);
+        _canvas->fillRect(660, 168, 150, 48, COLOR_BG);
+        char numStr[16];
+        snprintf(numStr, sizeof(numStr), "%d", curRemWh);
+        drawValWithUnit(660, 168, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
     }
 
-    // 6. Bottom Status Strip
+    // 5. Bottom Status Strip (Moved Profile & Voltage here!)
     int curTripX10 = (int)roundf(telemetry.trip_km * 10.0f);
     if (curTripX10 != _cache.trip_x10) {
         _cache.trip_x10 = curTripX10;
         char trStr[24];
-        snprintf(trStr, sizeof(trStr), "TRIP  %.1f km", telemetry.trip_km);
+        snprintf(trStr, sizeof(trStr), "TRIP %.1f km", telemetry.trip_km);
         _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
-        _canvas->setTextPadding(180);
-        _canvas->drawString(trStr, 30, 252, &fonts::Font4);
+        _canvas->setTextPadding(160);
+        _canvas->drawString(trStr, 25, 252, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    if (telemetry.battery_profile_id != _cache.batt_prof) {
+        _cache.batt_prof = telemetry.battery_profile_id;
+        const char *pName = (telemetry.battery_profile_id == 0) ? "[B1 FRESH]" : "[B2 DAILY]";
+        _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
+        _canvas->setTextPadding(140);
+        _canvas->drawString(pName, 215, 252, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
+
+    int curVoltX10 = (int)roundf(telemetry.voltage * 10.0f);
+    if (curVoltX10 != _cache.voltage_x10) {
+        _cache.voltage_x10 = curVoltX10;
+        char vStr[20];
+        snprintf(vStr, sizeof(vStr), "%.1f V", telemetry.voltage);
+        _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
+        _canvas->setTextPadding(110);
+        _canvas->drawCenterString(vStr, 410, 252, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
 
@@ -658,51 +643,65 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         _cache.temp_motor = mTemp;
         _cache.temp_esc = eTemp;
         char tStr[36];
-        snprintf(tStr, sizeof(tStr), "MOT %d C   ESC %d C", mTemp, eTemp);
+        snprintf(tStr, sizeof(tStr), "M %d C  E %d C", mTemp, eTemp);
         _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
-        _canvas->setTextPadding(260);
-        _canvas->drawCenterString(tStr, 410, 252, &fonts::Font4);
+        _canvas->setTextPadding(190);
+        _canvas->drawString(tStr, 525, 252, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
 
     char sohStr[20];
-    snprintf(sohStr, sizeof(sohStr), "SoH  %.0f%%", telemetry.battery_health_soh);
+    snprintf(sohStr, sizeof(sohStr), "SoH %.0f%%", telemetry.battery_health_soh);
     _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
-    _canvas->setTextPadding(140);
+    _canvas->setTextPadding(120);
     _canvas->drawRightString(sohStr, 800, 252, &fonts::Font4);
     _canvas->setTextPadding(0);
 }
 
 // ==============================================================================
-// SCREEN 1: TRIP & ENERGY STATISTICS DASHBOARD
+// SCREEN 1: ENERGY & BATTERY ANALYTICS DASHBOARD (Spacious 2-Card Layout)
 // ==============================================================================
-void DashboardRenderer::initTripStatsScreen(const DashTelemetry &telemetry) {
-    // Top Bar
+void DashboardRenderer::initEnergyStatsScreen(const DashTelemetry &telemetry) {
+    // Header Bar
     _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
-    _canvas->drawString("TRIP & ENERGY ANALYTICS", 20, 14, &fonts::Font4);
+    _canvas->drawString("ENERGY & BATTERY ANALYTICS", 25, 14, &fonts::Font4);
 
-    _canvas->drawFastHLine(20, 44, 780, COLOR_BORDER);
+    _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_BG);
+    _canvas->drawCenterString("[1/2]", 410, 14, &fonts::Font4);
 
-    // Three Large Cards (y=52, h=256)
-    int cW = 250, cH = 256;
-    drawCard(20,  52, cW, cH, COLOR_SURFACE, COLOR_BORDER);
-    drawCard(285, 52, cW, cH, COLOR_SURFACE, COLOR_BORDER);
-    drawCard(550, 52, cW, cH, COLOR_SURFACE, COLOR_BORDER);
+    _canvas->drawFastHLine(20, 42, 780, COLOR_BORDER);
 
-    // Card Headers (All Font4 Cyan)
+    // Two Large, Wide Cards (w=375, h=255)
+    drawCard(25,  50, 375, 255, COLOR_SURFACE, COLOR_BORDER);
+    drawCard(420, 50, 375, 255, COLOR_SURFACE, COLOR_BORDER);
+
+    // Card 1 Static Labels
     _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
-    _canvas->drawString("ENERGY EFFICIENCY", 34, 62, &fonts::Font4);
-    _canvas->drawCenterString("Wh / km", 145, 158, &fonts::Font4);
-
-    _canvas->drawString("PEAK DYNAMICS", 299, 62, &fonts::Font4);
-    _canvas->drawCenterString("Peak Power", 410, 138, &fonts::Font4);
-
-    _canvas->drawString("BATTERY & TEMPS", 564, 62, &fonts::Font4);
+    _canvas->drawString("CONSUMPTION & EFFICIENCY", 40, 60, &fonts::Font4);
     _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-    _canvas->drawCenterString("[Hold BTN2 to Reset]", 675, 280, &fonts::Font4);
+    _canvas->drawString("AVERAGE EFFICIENCY", 40, 88, &fonts::Font4);
+    _canvas->drawFastHLine(40, 160, 345, COLOR_BORDER);
+
+    _canvas->drawString("Trip Energy:", 40, 172, &fonts::Font4);
+    _canvas->drawString("Charge Used:", 40, 202, &fonts::Font4);
+    _canvas->drawString("Pack Remaining:", 40, 232, &fonts::Font4);
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawString("Projected Range:", 40, 262, &fonts::Font4);
+
+    // Card 2 Static Labels
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawString("BATTERY HEALTH & CAPACITY", 435, 60, &fonts::Font4);
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+    _canvas->drawString("BATTERY HEALTH (SoH)", 435, 88, &fonts::Font4);
+    _canvas->drawFastHLine(435, 160, 345, COLOR_BORDER);
+
+    _canvas->drawString("Active Profile:", 435, 172, &fonts::Font4);
+    _canvas->drawString("Learned Capacity:", 435, 202, &fonts::Font4);
+    _canvas->drawString("Nominal Capacity:", 435, 232, &fonts::Font4);
+    _canvas->drawString("Pack Voltage:", 435, 262, &fonts::Font4);
 }
 
-void DashboardRenderer::renderTripStatsScreen(const DashTelemetry &telemetry) {
+void DashboardRenderer::renderEnergyStatsScreen(const DashTelemetry &telemetry) {
     // Top Bar: Moving Ride Time
     uint32_t rTime = telemetry.stats.ride_time_sec;
     int hrs = rTime / 3600;
@@ -711,11 +710,12 @@ void DashboardRenderer::renderTripStatsScreen(const DashTelemetry &telemetry) {
     char timeStr[32];
     snprintf(timeStr, sizeof(timeStr), "MOVING: %02d:%02d:%02d", hrs, mins, secs);
     _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
-    _canvas->setTextPadding(240);
+    _canvas->setTextPadding(220);
     _canvas->drawRightString(timeStr, 800, 14, &fonts::Font4);
     _canvas->setTextPadding(0);
 
-    // Card 1: Energy & Efficiency (Zero Overlap!)
+    // Card 1: Hero Metric (Avg Efficiency Wh/km)
+    _canvas->fillRect(40, 108, 340, 48, COLOR_SURFACE);
     char effStr[16];
     if (telemetry.stats.trip_wh_km > 0.0f) {
         snprintf(effStr, sizeof(effStr), "%.1f", telemetry.stats.trip_wh_km);
@@ -723,105 +723,178 @@ void DashboardRenderer::renderTripStatsScreen(const DashTelemetry &telemetry) {
         snprintf(effStr, sizeof(effStr), "--.-");
     }
     _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-    _canvas->setTextPadding(200);
-    _canvas->drawCenterString(effStr, 145, 84, &fonts::Font8);
-    _canvas->setTextPadding(0);
+    _canvas->drawString(effStr, 40, 108, &fonts::Font6);
+    int nw = _canvas->textWidth(effStr, &fonts::Font6);
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawString("Wh/km", 40 + nw + 8, 124, &fonts::Font4);
 
+    // Card 1: Secondary Key-Value Rows
     char buf[32];
-    snprintf(buf, sizeof(buf), "Trip Energy: %.0f Wh", telemetry.stats.trip_wh);
+    snprintf(buf, sizeof(buf), "%.0f Wh", telemetry.stats.trip_wh);
     _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 34, 190, &fonts::Font4);
+    _canvas->setTextPadding(140);
+    _canvas->drawRightString(buf, 385, 172, &fonts::Font4);
 
-    snprintf(buf, sizeof(buf), "Charge Used: %.2f Ah", telemetry.amphours_used);
-    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 34, 218, &fonts::Font4);
+    snprintf(buf, sizeof(buf), "%.2f Ah", telemetry.amphours_used);
+    _canvas->drawRightString(buf, 385, 202, &fonts::Font4);
 
-    snprintf(buf, sizeof(buf), "Pack Left: %.0f Wh", telemetry.remaining_wh);
-    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 34, 246, &fonts::Font4);
+    snprintf(buf, sizeof(buf), "%.0f Wh", telemetry.remaining_wh);
+    _canvas->drawRightString(buf, 385, 232, &fonts::Font4);
 
-    snprintf(buf, sizeof(buf), "EST Range: %d km", (int)roundf(telemetry.est_range_km));
+    snprintf(buf, sizeof(buf), "%d km", (int)roundf(telemetry.est_range_km));
     _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 34, 274, &fonts::Font4);
+    _canvas->drawRightString(buf, 385, 262, &fonts::Font4);
     _canvas->setTextPadding(0);
 
-    // Card 2: Peak Dynamics
-    char pStr[24];
-    if (telemetry.stats.peak_power_watts >= 1000.0f) {
-        snprintf(pStr, sizeof(pStr), "%.2f kW", telemetry.stats.peak_power_watts / 1000.0f);
-    } else {
-        snprintf(pStr, sizeof(pStr), "%.0f W", telemetry.stats.peak_power_watts);
-    }
-    _canvas->setTextColor(COLOR_AMBER, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawCenterString(pStr, 410, 88, &fonts::Font6);
-    _canvas->setTextPadding(0);
-
-    snprintf(buf, sizeof(buf), "Peak Batt: %.1f A", telemetry.stats.peak_current_amps);
-    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 299, 168, &fonts::Font4);
-
-    snprintf(buf, sizeof(buf), "Peak Phase: %.1f A", telemetry.stats.peak_phase_amps);
-    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 299, 196, &fonts::Font4);
-
-    snprintf(buf, sizeof(buf), "Max Speed: %.1f km/h", telemetry.stats.max_speed_kmh);
-    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 299, 224, &fonts::Font4);
-
-    snprintf(buf, sizeof(buf), "Avg Speed: %.1f km/h", telemetry.stats.avg_speed_kmh);
-    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 299, 252, &fonts::Font4);
-
-    uint32_t mt = telemetry.stats.ride_time_sec;
-    snprintf(buf, sizeof(buf), "Moving: %02dm %02ds", (mt % 3600) / 60, mt % 60);
-    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 299, 280, &fonts::Font4);
-    _canvas->setTextPadding(0);
-
-    // Card 3: Battery Health & Clean Thermals
-    const char *pName = (telemetry.battery_profile_id == 0) ? "Profile 1 (Fresh)" : "Profile 2 (Daily)";
-    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(pName, 564, 88, &fonts::Font4);
-
-    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-    _canvas->drawString("Health SoH:", 564, 118, &fonts::Font4);
-
-    snprintf(buf, sizeof(buf), "%.1f %%", telemetry.battery_health_soh);
+    // Card 2: Hero Metric (Health SoH %)
+    _canvas->fillRect(435, 108, 340, 48, COLOR_SURFACE);
+    char sohStr[16];
+    snprintf(sohStr, sizeof(sohStr), "%.1f", telemetry.battery_health_soh);
     _canvas->setTextColor(COLOR_GREEN, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 564, 144, &fonts::Font6);
+    _canvas->drawString(sohStr, 435, 108, &fonts::Font6);
+    int snw = _canvas->textWidth(sohStr, &fonts::Font6);
+    _canvas->drawString("%", 435 + snw + 6, 124, &fonts::Font4);
+
+    // Card 2: Secondary Key-Value Rows
+    const char *pName = (telemetry.battery_profile_id == 0) ? "[B1 FRESH]" : "[B2 DAILY]";
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->setTextPadding(140);
+    _canvas->drawRightString(pName, 780, 172, &fonts::Font4);
 
     const BatteryProfile &prof = Battery.getProfile(telemetry.battery_profile_id);
-    snprintf(buf, sizeof(buf), "Learned: %.0f Wh", prof.learned_wh);
+    snprintf(buf, sizeof(buf), "%.0f Wh", prof.learned_wh);
+    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+    _canvas->drawRightString(buf, 780, 202, &fonts::Font4);
+
+    snprintf(buf, sizeof(buf), "%.0f Wh", prof.nominal_wh);
     _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 564, 196, &fonts::Font4);
+    _canvas->drawRightString(buf, 780, 232, &fonts::Font4);
 
-    snprintf(buf, sizeof(buf), "Peak Mot: %.1f C", telemetry.stats.max_temp_motor);
+    snprintf(buf, sizeof(buf), "%.1f V", telemetry.voltage);
     _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 564, 224, &fonts::Font4);
-
-    snprintf(buf, sizeof(buf), "Peak ESC: %.1f C", telemetry.stats.max_temp_esc);
-    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-    _canvas->setTextPadding(220);
-    _canvas->drawString(buf, 564, 250, &fonts::Font4);
+    _canvas->drawRightString(buf, 780, 262, &fonts::Font4);
     _canvas->setTextPadding(0);
 }
 
 // ==============================================================================
-// SCREEN 2: INTERACTIVE SETTINGS MENU SYSTEM
+// SCREEN 2: POWER & PERFORMANCE ANALYTICS DASHBOARD (Spacious 2-Card Layout)
+// ==============================================================================
+void DashboardRenderer::initPerfStatsScreen(const DashTelemetry &telemetry) {
+    // Header Bar
+    _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
+    _canvas->drawString("POWER & PERFORMANCE ANALYTICS", 25, 14, &fonts::Font4);
+
+    _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_BG);
+    _canvas->drawCenterString("[2/2]", 410, 14, &fonts::Font4);
+
+    _canvas->drawFastHLine(20, 42, 780, COLOR_BORDER);
+
+    // Two Large, Wide Cards (w=375, h=255)
+    drawCard(25,  50, 375, 255, COLOR_SURFACE, COLOR_BORDER);
+    drawCard(420, 50, 375, 255, COLOR_SURFACE, COLOR_BORDER);
+
+    // Card 1 Static Labels
+    _canvas->setTextColor(COLOR_AMBER, COLOR_SURFACE);
+    _canvas->drawString("ELECTRICAL POWER PEAKS", 40, 60, &fonts::Font4);
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+    _canvas->drawString("PEAK ELECTRICAL POWER", 40, 88, &fonts::Font4);
+    _canvas->drawFastHLine(40, 160, 345, COLOR_BORDER);
+
+    _canvas->drawString("Peak Battery Current:", 40, 172, &fonts::Font4);
+    _canvas->drawString("Peak Phase Current:", 40, 202, &fonts::Font4);
+    _canvas->drawString("Peak Motor Temp:", 40, 232, &fonts::Font4);
+    _canvas->drawString("Peak ESC Temp:", 40, 262, &fonts::Font4);
+
+    // Card 2 Static Labels
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawString("SPEED & TRIP DYNAMICS", 435, 60, &fonts::Font4);
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+    _canvas->drawString("MAX VEHICLE SPEED", 435, 88, &fonts::Font4);
+    _canvas->drawFastHLine(435, 160, 345, COLOR_BORDER);
+
+    _canvas->drawString("Average Speed:", 435, 172, &fonts::Font4);
+    _canvas->drawString("Trip Distance:", 435, 202, &fonts::Font4);
+    _canvas->drawString("Lifetime ODO:", 435, 232, &fonts::Font4);
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawString("Reset Statistics:", 435, 262, &fonts::Font4);
+}
+
+void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
+    // Top Bar: Moving Ride Time
+    uint32_t rTime = telemetry.stats.ride_time_sec;
+    int hrs = rTime / 3600;
+    int mins = (rTime % 3600) / 60;
+    int secs = rTime % 60;
+    char timeStr[32];
+    snprintf(timeStr, sizeof(timeStr), "MOVING: %02d:%02d:%02d", hrs, mins, secs);
+    _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
+    _canvas->setTextPadding(220);
+    _canvas->drawRightString(timeStr, 800, 14, &fonts::Font4);
+    _canvas->setTextPadding(0);
+
+    // Card 1: Hero Metric (Peak Power)
+    _canvas->fillRect(40, 108, 340, 48, COLOR_SURFACE);
+    char pNumStr[16];
+    const char *pUnit = "W";
+    if (telemetry.stats.peak_power_watts >= 1000.0f) {
+        snprintf(pNumStr, sizeof(pNumStr), "%.2f", telemetry.stats.peak_power_watts / 1000.0f);
+        pUnit = "kW";
+    } else {
+        snprintf(pNumStr, sizeof(pNumStr), "%.0f", telemetry.stats.peak_power_watts);
+        pUnit = "W";
+    }
+    _canvas->setTextColor(COLOR_AMBER, COLOR_SURFACE);
+    _canvas->drawString(pNumStr, 40, 108, &fonts::Font6);
+    int pnw = _canvas->textWidth(pNumStr, &fonts::Font6);
+    _canvas->drawString(pUnit, 40 + pnw + 8, 124, &fonts::Font4);
+
+    // Card 1: Secondary Key-Value Rows
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%.1f A", telemetry.stats.peak_current_amps);
+    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+    _canvas->setTextPadding(140);
+    _canvas->drawRightString(buf, 385, 172, &fonts::Font4);
+
+    snprintf(buf, sizeof(buf), "%.1f A", telemetry.stats.peak_phase_amps);
+    _canvas->drawRightString(buf, 385, 202, &fonts::Font4);
+
+    snprintf(buf, sizeof(buf), "%.1f C", telemetry.stats.max_temp_motor);
+    _canvas->drawRightString(buf, 385, 232, &fonts::Font4);
+
+    snprintf(buf, sizeof(buf), "%.1f C", telemetry.stats.max_temp_esc);
+    _canvas->drawRightString(buf, 385, 262, &fonts::Font4);
+    _canvas->setTextPadding(0);
+
+    // Card 2: Hero Metric (Max Speed)
+    _canvas->fillRect(435, 108, 340, 48, COLOR_SURFACE);
+    char spdNumStr[16];
+    snprintf(spdNumStr, sizeof(spdNumStr), "%.1f", telemetry.stats.max_speed_kmh);
+    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+    _canvas->drawString(spdNumStr, 435, 108, &fonts::Font6);
+    int snw = _canvas->textWidth(spdNumStr, &fonts::Font6);
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawString("km/h", 435 + snw + 8, 124, &fonts::Font4);
+
+    // Card 2: Secondary Key-Value Rows
+    snprintf(buf, sizeof(buf), "%.1f km/h", telemetry.stats.avg_speed_kmh);
+    _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+    _canvas->setTextPadding(140);
+    _canvas->drawRightString(buf, 780, 172, &fonts::Font4);
+
+    snprintf(buf, sizeof(buf), "%.1f km", telemetry.trip_km);
+    _canvas->drawRightString(buf, 780, 202, &fonts::Font4);
+
+    snprintf(buf, sizeof(buf), "%.1f km", telemetry.odo_km);
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+    _canvas->drawRightString(buf, 780, 232, &fonts::Font4);
+
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawRightString("[Hold BTN2]", 780, 262, &fonts::Font4);
+    _canvas->setTextPadding(0);
+}
+
+// ==============================================================================
+// SCREEN 3: INTERACTIVE SETTINGS MENU SYSTEM
 // ==============================================================================
 static const char *ROOT_CATEGORIES[5] = {
     "1. POWER & DRIVE",
@@ -842,7 +915,7 @@ static int getSubItemCount(uint8_t sub_id) {
     }
 }
 
-// Formats item title, value text, and two clean, non-overflowing Font4 description lines
+// All description lines strictly constrained to <= 23 characters to prevent any clipping!
 static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                                     char *title, size_t title_sz,
                                     char *val, size_t val_sz,
@@ -858,20 +931,20 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                 case 0:
                     snprintf(title, title_sz, "Max Battery Current");
                     snprintf(val, val_sz, "%d A", s.max_battery_amps);
-                    snprintf(d1, d1_sz, "Battery pack current limit: 5A - 35A");
-                    snprintf(d2, d2_sz, "Safe limit for Bafang BBS: 35A max");
+                    snprintf(d1, d1_sz, "Pack current limit");
+                    snprintf(d2, d2_sz, "Safe BBS: 5A - 35A");
                     break;
                 case 1:
                     snprintf(title, title_sz, "Max Phase Current");
                     snprintf(val, val_sz, "%d A", s.max_phase_amps);
-                    snprintf(d1, d1_sz, "Motor torque phase limit: 10A - 70A");
-                    snprintf(d2, d2_sz, "Safe limit for Bafang BBS: 70A max");
+                    snprintf(d1, d1_sz, "Motor torque limit");
+                    snprintf(d2, d2_sz, "Safe BBS: 10A - 70A");
                     break;
                 case 2:
                     snprintf(title, title_sz, "Field Weakening (FW)");
                     snprintf(val, val_sz, "%d A", s.field_weak_amps);
-                    snprintf(d1, d1_sz, "Top speed boost current: 0A - 20A");
-                    snprintf(d2, d2_sz, "Expands duty into 100%% - 120%% redline");
+                    snprintf(d1, d1_sz, "Top speed boost");
+                    snprintf(d2, d2_sz, "Redline: 0A - 20A");
                     break;
                 case 3:
                     snprintf(title, title_sz, "Speed Limit");
@@ -880,14 +953,14 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                     } else {
                         snprintf(val, val_sz, "%d km/h", s.max_speed_kmh);
                     }
-                    snprintf(d1, d1_sz, "Motor assist cutoff speed limit");
-                    snprintf(d2, d2_sz, "Presets: OFF, 25, 32, 45, 60 km/h");
+                    snprintf(d1, d1_sz, "Motor assist cutoff");
+                    snprintf(d2, d2_sz, "OFF, 25, 32, 45, 60");
                     break;
                 case 4:
                     snprintf(title, title_sz, "Throttle Ramp Time");
                     snprintf(val, val_sz, "%.2f s", s.throttle_ramp_sec);
-                    snprintf(d1, d1_sz, "Throttle acceleration response filter");
-                    snprintf(d2, d2_sz, "Range: 0.10s to 1.00s for smooth start");
+                    snprintf(d1, d1_sz, "Throttle filter");
+                    snprintf(d2, d2_sz, "Smooth: 0.10s - 1.00s");
                     break;
             }
             break;
@@ -897,14 +970,14 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                 case 0:
                     snprintf(title, title_sz, "Dashboard Style");
                     snprintf(val, val_sz, (s.dash_style == 0) ? "Analog Dial" : "Duty Bar");
-                    snprintf(d1, d1_sz, "Primary instrument cluster theme");
-                    snprintf(d2, d2_sz, "Left-Hug Analog Dial or Duty Bar");
+                    snprintf(d1, d1_sz, "Instrument theme");
+                    snprintf(d2, d2_sz, "Analog Dial / Duty Bar");
                     break;
                 case 1:
                     snprintf(title, title_sz, "Screen Brightness");
                     snprintf(val, val_sz, "%d %%", s.brightness_pct);
-                    snprintf(d1, d1_sz, "ST7701 backlight brightness level");
-                    snprintf(d2, d2_sz, "Range: 20%% to 100%% (step 5%%)");
+                    snprintf(d1, d1_sz, "Backlight level");
+                    snprintf(d2, d2_sz, "Range: 20%% to 100%%");
                     break;
             }
             break;
@@ -914,26 +987,26 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                 case 0:
                     snprintf(title, title_sz, "Active Profile");
                     snprintf(val, val_sz, (s.active_battery_profile == 0) ? "Profile 1 (Fresh)" : "Profile 2 (Daily)");
-                    snprintf(d1, d1_sz, "Select between two 52V battery packs");
-                    snprintf(d2, d2_sz, "Independent learned health and capacity");
+                    snprintf(d1, d1_sz, "Switch 52V pack");
+                    snprintf(d2, d2_sz, "Profile 1 or 2");
                     break;
                 case 1:
                     snprintf(title, title_sz, "Profile 1 Nominal Wh");
                     snprintf(val, val_sz, "%.0f Wh", Battery.getProfile(0).nominal_wh);
-                    snprintf(d1, d1_sz, "Rated full capacity of Battery 1");
-                    snprintf(d2, d2_sz, "Range: 500Wh to 2500Wh (step 50Wh)");
+                    snprintf(d1, d1_sz, "Pack 1 full capacity");
+                    snprintf(d2, d2_sz, "500Wh to 2500Wh");
                     break;
                 case 2:
                     snprintf(title, title_sz, "Profile 2 Nominal Wh");
                     snprintf(val, val_sz, "%.0f Wh", Battery.getProfile(1).nominal_wh);
-                    snprintf(d1, d1_sz, "Rated full capacity of Battery 2");
-                    snprintf(d2, d2_sz, "Range: 500Wh to 2500Wh (step 50Wh)");
+                    snprintf(d1, d1_sz, "Pack 2 full capacity");
+                    snprintf(d2, d2_sz, "500Wh to 2500Wh");
                     break;
                 case 3:
                     snprintf(title, title_sz, "Reset SoH Learning");
                     snprintf(val, val_sz, "RESET LEARNING");
-                    snprintf(d1, d1_sz, "Reset self-learning capacity algorithm");
-                    snprintf(d2, d2_sz, "Press [BTN2] to reset active profile");
+                    snprintf(d1, d1_sz, "Reset capacity learn");
+                    snprintf(d2, d2_sz, "Press [1+2] to reset");
                     break;
             }
             break;
@@ -943,20 +1016,20 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                 case 0:
                     snprintf(title, title_sz, "Wheel Diameter");
                     snprintf(val, val_sz, "%.1f in", s.wheel_diameter_in);
-                    snprintf(d1, d1_sz, "Tire outer diameter for speed sync");
-                    snprintf(d2, d2_sz, "Range: 20.0 to 29.0 inches (step 0.5)");
+                    snprintf(d1, d1_sz, "Tire outer diameter");
+                    snprintf(d2, d2_sz, "20.0 to 29.0 inches");
                     break;
                 case 1:
                     snprintf(title, title_sz, "Motor Pole Pairs");
                     snprintf(val, val_sz, "%d", s.motor_pole_pairs);
-                    snprintf(d1, d1_sz, "VESC ERPM to motor RPM divisor");
-                    snprintf(d2, d2_sz, "Bafang BBS standard: 15 pole pairs");
+                    snprintf(d1, d1_sz, "VESC ERPM divisor");
+                    snprintf(d2, d2_sz, "Bafang standard: 15");
                     break;
                 case 2:
                     snprintf(title, title_sz, "Internal Gear Ratio");
                     snprintf(val, val_sz, "%.2f : 1", s.gear_ratio);
-                    snprintf(d1, d1_sz, "Reduction ratio from rotor to output");
-                    snprintf(d2, d2_sz, "Range: 1.00 to 4.00 (default: 1.00)");
+                    snprintf(d1, d1_sz, "Rotor to output gear");
+                    snprintf(d2, d2_sz, "Ratio: 1.00 to 4.00");
                     break;
             }
             break;
@@ -966,20 +1039,20 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                 case 0:
                     snprintf(title, title_sz, "Reset Trip Statistics");
                     snprintf(val, val_sz, "RESET TRIP STATS");
-                    snprintf(d1, d1_sz, "Clears trip distance, Wh/km & peaks");
-                    snprintf(d2, d2_sz, "Press [BTN2] to execute reset");
+                    snprintf(d1, d1_sz, "Clear trip distance");
+                    snprintf(d2, d2_sz, "Press [1+2] to clear");
                     break;
                 case 1:
                     snprintf(title, title_sz, "Factory Reset");
                     snprintf(val, val_sz, "RESTORE DEFAULTS");
-                    snprintf(d1, d1_sz, "Restores all settings to defaults");
-                    snprintf(d2, d2_sz, "Press [BTN2] to execute reset");
+                    snprintf(d1, d1_sz, "Restore defaults");
+                    snprintf(d2, d2_sz, "Press [1+2] to reset");
                     break;
                 case 2:
                     snprintf(title, title_sz, "VESC Hardware Link");
                     snprintf(val, val_sz, telemetry.vesc_connected ? "COMM HEALTHY" : "OFFLINE");
-                    snprintf(d1, d1_sz, "Flipsky 75100 V1 UART packet status");
-                    snprintf(d2, d2_sz, "TX: GPIO 43, RX: GPIO 44 (115200 baud)");
+                    snprintf(d1, d1_sz, "Flipsky 75100 V1 UART");
+                    snprintf(d2, d2_sz, "TX:43 RX:44 (115200)");
                     break;
             }
             break;
@@ -1069,18 +1142,18 @@ void DashboardRenderer::renderSettingsScreen(const DashTelemetry &telemetry) {
         _canvas->drawString(ROOT_CATEGORIES[_menu_root_idx], 365, 68, &fonts::Font4);
 
         const char *descs1[5] = {
-            "Power Limits & Drive Calibration",
-            "Instrument Theme & Backlight Level",
-            "Dual 52V Battery Pack Management",
-            "Wheel Size, Motor Poles & Gearing",
-            "Ride Statistics & Diagnostics"
+            "Power Limits & Drive",
+            "Theme & Brightness",
+            "Dual 52V Management",
+            "Speed & Gearing",
+            "Diagnostics & Reset"
         };
         const char *descs2[5] = {
-            "Battery amps (35A), Phase amps (70A), FW (20A)",
-            "Left-Hug Analog Dial or Horizontal Duty Bar",
-            "Learned capacity & health tracking",
-            "Accurate speed and distance calibration",
-            "Reset trip stats or restore defaults"
+            "Bat 35A, Phase 70A, FW",
+            "Analog / Bar Style",
+            "Independent SoH & Wh",
+            "Tire size, Poles, Ratio",
+            "Trip reset & Defaults"
         };
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
         _canvas->drawString(descs1[_menu_root_idx], 365, 120, &fonts::Font4);
@@ -1089,9 +1162,9 @@ void DashboardRenderer::renderSettingsScreen(const DashTelemetry &telemetry) {
         _canvas->drawString(descs2[_menu_root_idx], 365, 154, &fonts::Font4);
 
         _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
-        _canvas->drawString("Press [BTN2] to Enter Submenu", 365, 230, &fonts::Font4);
+        _canvas->drawString("[BTN1/2] Up/Down   [1+2] Enter", 365, 230, &fonts::Font4);
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-        _canvas->drawString("Hold [BTN1] to Return to Dashboard", 365, 268, &fonts::Font4);
+        _canvas->drawString("Hold [BTN2] to Return to Dash", 365, 268, &fonts::Font4);
     } else {
         char val[32], d1[64], d2[64];
         getSubItemDetails2Lines(_menu_root_idx, _menu_sub_idx, curTitle, sizeof(curTitle), val, sizeof(val), d1, sizeof(d1), d2, sizeof(d2), telemetry);
@@ -1133,10 +1206,10 @@ void DashboardRenderer::renderSettingsScreen(const DashTelemetry &telemetry) {
         // Help Hints
         if (_menu_edit_mode) {
             _canvas->setTextColor(COLOR_AMBER, COLOR_SURFACE);
-            _canvas->drawString("[-] BTN1   [+] BTN2   (Hold accelerates)", 365, 268, &fonts::Font4);
+            _canvas->drawString("[+] BTN1   [-] BTN2   [1+2] Done", 365, 268, &fonts::Font4);
         } else {
             _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-            _canvas->drawString("[BTN1] Next   [BTN2] Edit   [Hold 1] Back", 365, 268, &fonts::Font4);
+            _canvas->drawString("[BTN1/2] Nav   [1+2] Edit   [Hold 2] Back", 365, 268, &fonts::Font4);
         }
     }
 
@@ -1256,11 +1329,12 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
 
     if (_menu_edit_mode) {
         _menu_last_activity_ms = millis();
-        if (action == NAV_EDIT_DEC || action == NAV_BTN1_SHORT) {
-            adjustCurrentSetting(-1, telemetry);
-        } else if (action == NAV_EDIT_INC || action == NAV_BTN2_SHORT) {
+        // BTN1 = UP (+), BTN2 = DOWN (-)
+        if (action == NAV_EDIT_INC || action == NAV_BTN1_SHORT) {
             adjustCurrentSetting(+1, telemetry);
-        } else if (action == NAV_BTN1_LONG || action == NAV_BTN2_LONG) {
+        } else if (action == NAV_EDIT_DEC || action == NAV_BTN2_SHORT) {
+            adjustCurrentSetting(-1, telemetry);
+        } else if (action == NAV_BOTH_PRESSED || action == NAV_BTN1_LONG || action == NAV_BTN2_LONG) {
             _menu_edit_mode = false;
             Buttons.setEditMode(false);
             Settings.save();
@@ -1269,15 +1343,22 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
         return;
     }
 
-    // Normal menu navigation mode
+    // Normal menu navigation mode:
+    // BTN1 = UP, BTN2 = DOWN, BOTH = SELECT/ENTER, BTN2 LONG = BACK/EXIT
     if (_menu_in_sub) {
-        if (action == NAV_BTN1_SHORT) {
+        if (action == NAV_BTN1_SHORT) { // Cursor UP
+            int total = getSubItemCount(_menu_root_idx);
+            if (total > 0) {
+                _menu_sub_idx = (_menu_sub_idx - 1 + total) % total;
+                _menu_dirty = true;
+            }
+        } else if (action == NAV_BTN2_SHORT) { // Cursor DOWN
             int total = getSubItemCount(_menu_root_idx);
             if (total > 0) {
                 _menu_sub_idx = (_menu_sub_idx + 1) % total;
                 _menu_dirty = true;
             }
-        } else if (action == NAV_BTN2_SHORT) {
+        } else if (action == NAV_BOTH_PRESSED) { // SELECT / ENTER
             if (_menu_root_idx == 2 && _menu_sub_idx == 3) {
                 // Reset Learning
                 Battery.resetProfileLearning(Settings.get().active_battery_profile);
@@ -1300,20 +1381,23 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
                 _menu_last_activity_ms = millis();
                 _menu_dirty = true;
             }
-        } else if (action == NAV_BTN1_LONG) {
+        } else if (action == NAV_BTN2_LONG || action == NAV_BTN1_LONG) { // BACK
             _menu_in_sub = false;
             _menu_dirty = true;
         }
     } else {
-        // In Root Menu
-        if (action == NAV_BTN1_SHORT) {
+        // In Root Menu:
+        if (action == NAV_BTN1_SHORT) { // Cursor UP
+            _menu_root_idx = (_menu_root_idx - 1 + 5) % 5;
+            _menu_dirty = true;
+        } else if (action == NAV_BTN2_SHORT) { // Cursor DOWN
             _menu_root_idx = (_menu_root_idx + 1) % 5;
             _menu_dirty = true;
-        } else if (action == NAV_BTN2_SHORT) {
+        } else if (action == NAV_BOTH_PRESSED) { // ENTER SUBMENU
             _menu_in_sub = true;
             _menu_sub_idx = 0;
             _menu_dirty = true;
-        } else if (action == NAV_BTN1_LONG) {
+        } else if (action == NAV_BTN2_LONG || action == NAV_BTN1_LONG) { // EXIT SETTINGS
             telemetry.screen = SCREEN_RIDE_DASH;
             _screen_dirty = true;
             _cache.invalidate();
