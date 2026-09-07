@@ -3,85 +3,119 @@
 #include <Arduino.h>
 #include "display_driver.h"
 #include "dash_types.h"
+#include "settings_manager.h"
+#include "battery_manager.h"
 
 class DashboardRenderer {
 public:
     DashboardRenderer();
     void begin(DisplayDriver *display);
     void render(const DashTelemetry &telemetry);
-    void triggerR1Sweep();
+    void triggerNeedleSweep();
     bool isSweeping() const { return _is_sweeping; }
     void markScreenDirty() { _screen_dirty = true; }
+
+    // Menu Navigation Handler (called by main when in SCREEN_SETTINGS_MENU)
+    void handleMenuNav(NavAction action, DashTelemetry &telemetry);
+    bool isInEditMode() const { return _menu_edit_mode; }
 
 private:
     DisplayDriver *_display;
     LovyanGFX     *_canvas;
 
-    // Screen 1: Practical Horizontal Tachometer (Large, Clean OEM Design)
-    void initHorizontalTachScreen(const DashTelemetry &telemetry);
-    void renderHorizontalTachScreen(const DashTelemetry &telemetry);
-    void drawPreciseRpmBar(int x, int y, int w, int h, float rpm, float max_rpm);
+    // Screen 0: Main Ride Dashboard (renders selected style)
+    void initRideDashboard(const DashTelemetry &telemetry);
+    void renderRideDashboard(const DashTelemetry &telemetry);
 
-    // Screen 2: Yamaha R1 Analog Dial + Superbike Cluster
-    void initR1DialScreen(const DashTelemetry &telemetry);
-    void renderR1DialScreen(const DashTelemetry &telemetry);
-    void drawR1AnalogDial(int cx, int cy, int radius, float rpm, float max_rpm);
-    void drawR1Needle(int cx, int cy, int length, float angle_rad, uint16_t color);
+    // Style A: Left-Hug Analog Duty Dial Cluster (Motorcycle/Koso inspired)
+    void initLeftHugAnalogStyle(const DashTelemetry &telemetry);
+    void renderLeftHugAnalogStyle(const DashTelemetry &telemetry);
+    void drawAnalogNeedle(int cx, int cy, int length, float angle_rad, uint16_t color);
 
-    // Screen 3: Settings & Diagnostics Menu
+    // Style B: Horizontal Duty Bar Cluster
+    void initHorizontalBarStyle(const DashTelemetry &telemetry);
+    void renderHorizontalBarStyle(const DashTelemetry &telemetry);
+    void drawPreciseDutyBar(int x, int y, int w, int h, float duty, float max_duty);
+
+    // Screen 1: Trip & Energy Statistics Dashboard
+    void initTripStatsScreen(const DashTelemetry &telemetry);
+    void renderTripStatsScreen(const DashTelemetry &telemetry);
+
+    // Screen 2: Interactive Settings Menu System
     void initSettingsScreen(const DashTelemetry &telemetry);
     void renderSettingsScreen(const DashTelemetry &telemetry);
+    void renderRootMenu();
+    void renderSubmenu(uint8_t sub_id, const DashTelemetry &telemetry);
+    void adjustCurrentSetting(int direction, DashTelemetry &telemetry); // +1 or -1
 
-    // Common UI Helpers with Large High-Contrast Typography
+    // Common UI Helpers
     void drawCard(int x, int y, int w, int h, uint16_t bg, uint16_t border);
 
-    // Screen Dirty & Layout State (Differential Rendering)
+    // Screen State
     DashboardScreen _active_screen;
+    DashboardStyle  _active_style;
     bool            _screen_dirty;
-    RidingMode      _last_mode;
 
+    // Menu Navigation State
+    bool     _menu_in_sub;
+    uint8_t  _menu_root_idx;
+    uint8_t  _menu_sub_idx;
+    bool     _menu_edit_mode;
+    uint32_t _menu_last_activity_ms;
+    bool     _menu_dirty;
+
+    // Differential Render Cache
     struct RenderCache {
         int speed;
-        int rpm_fill_w;
-        int rpm_val;
+        int duty_x10;
+        int duty_fill_w;
         int battery_pct;
         int voltage_x10;
         int current_x10;
+        int phase_x10;
         int watts;
+        int remaining_wh;
+        int est_range;
         int temp_motor;
         int temp_esc;
         int trip_x10;
         int odo;
         int uptime;
         bool vesc_connected;
+        uint8_t batt_prof;
+
         void invalidate() {
             speed = -999;
-            rpm_fill_w = -1;
-            rpm_val = -999;
+            duty_x10 = -999;
+            duty_fill_w = -1;
             battery_pct = -1;
             voltage_x10 = -1;
             current_x10 = -1;
+            phase_x10 = -1;
             watts = -99999;
+            remaining_wh = -1;
+            est_range = -1;
             temp_motor = -999;
             temp_esc = -999;
             trip_x10 = -1;
             odo = -1;
             uptime = -1;
             vesc_connected = false;
+            batt_prof = 255;
         }
     } _cache;
 
-    // R1 Analog Needle State
+    // Analog Needle State
     struct NeedleCoords {
         int tipX, tipY, b1X, b1Y, b2X, b2Y;
         bool valid;
     } _last_needle;
 
-    // R1 Sweep Animation State
+    // Needle Sweep Animation State
     bool     _is_sweeping;
     uint8_t  _sweep_phase;
     float    _sweep_progress;
-    float    _sweep_rpm;
+    float    _sweep_duty;
     uint32_t _last_sweep_tick_ms;
 };
 

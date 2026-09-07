@@ -2,57 +2,93 @@
 
 #include <Arduino.h>
 
-// Dashboard Screen / View IDs
+// Top-Level Screens (Cycled via Button 1)
 enum DashboardScreen {
-    SCREEN_HORIZONTAL_TACH = 0,  // Style 1: Clean OEM horizontal tachometer + big center speed
-    SCREEN_R1_ANALOG_TACH  = 1,  // Style 2: Yamaha R1 analog dial + superbike digital cluster
-    SCREEN_SETTINGS_MENU   = 2,  // Style 3: Settings / Menu / Diagnostics screen
+    SCREEN_RIDE_DASH     = 0,  // Main Ride Dashboard (renders active style: Analog or Horizontal)
+    SCREEN_TRIP_STATS    = 1,  // Trip & Energy Statistics Dashboard
+    SCREEN_SETTINGS_MENU = 2,  // Interactive Settings & Diagnostics Menu
     SCREEN_COUNT
 };
 
-// Generic Navigation Action Events (for menus, settings, and multi-function navigation)
-enum NavAction {
-    NAV_NONE = 0,
-    NAV_PREV,        // Button 1 Short Press (Up / Prev / Switch Page)
-    NAV_NEXT,        // Button 2 Short Press (Down / Next / Cycle Mode)
-    NAV_MENU_BACK,   // Button 1 Long Press  (Menu / Back / Re-sweep)
-    NAV_SELECT_ENTER // Button 2 Long Press  (Select / Enter / Reset)
+// Main Dashboard Styles (Selected in Settings)
+enum DashboardStyle {
+    STYLE_ANALOG_DIAL    = 0,  // Left-Hug Analog Duty Dial (0-120% Duty with FW Redline)
+    STYLE_HORIZONTAL_BAR = 1,  // Horizontal Duty Bar Cluster
+    STYLE_COUNT
 };
 
-// Riding / Assist Modes
-enum RidingMode {
-    MODE_ECO   = 0,
-    MODE_STD   = 1,
-    MODE_SPORT = 2,
-    MODE_BOOST = 3,
-    MODE_COUNT
+// Navigation Actions
+enum NavAction {
+    NAV_NONE = 0,
+    NAV_BTN1_SHORT,    // Button 1 Short Press (Next Screen in Dash / Scroll Down in Menu / Value - in Edit)
+    NAV_BTN1_LONG,     // Button 1 Long Press  (Menu Back / Cancel)
+    NAV_BTN2_SHORT,    // Button 2 Short Press (Quick Action in Dash / Select in Menu / Value + in Edit)
+    NAV_BTN2_LONG,     // Button 2 Long Press  (Trip Reset / Secondary Action)
+    NAV_EDIT_DEC,      // Accelerated Decrement
+    NAV_EDIT_INC,      // Accelerated Increment
+    NAV_BOTH_PRESSED   // Both buttons pressed simultaneously
+};
+
+// Long-Term & Ride Statistics
+struct TripStatistics {
+    float trip_wh;           // Energy consumed this trip (Watt-hours)
+    float trip_wh_km;        // Energy efficiency (Wh/km)
+    float peak_current_amps; // Maximum battery current recorded (A)
+    float peak_phase_amps;   // Maximum motor phase current recorded (A)
+    float peak_power_watts;  // Maximum power recorded (W)
+    float max_speed_kmh;     // Maximum speed reached (km/h)
+    float avg_speed_kmh;     // Average speed during trip (km/h)
+    uint32_t ride_time_sec;  // Elapsed moving/ride time in seconds
+    float max_temp_motor;    // Peak motor temperature recorded (°C)
+    float max_temp_esc;      // Peak ESC/Mosfet temperature recorded (°C)
+
+    void reset() {
+        trip_wh = 0.0f;
+        trip_wh_km = 0.0f;
+        peak_current_amps = 0.0f;
+        peak_phase_amps = 0.0f;
+        peak_power_watts = 0.0f;
+        max_speed_kmh = 0.0f;
+        avg_speed_kmh = 0.0f;
+        ride_time_sec = 0;
+        max_temp_motor = 0.0f;
+        max_temp_esc = 0.0f;
+    }
 };
 
 // Core Telemetry Data Structure
 struct DashTelemetry {
-    // Speed & Motor
-    float speed_kmh;        // Vehicle speed (km/h)
-    float rpm;              // Motor RPM
-    float throttle_pct;     // Throttle input percentage (0 - 100%)
+    // Speed & Inverter State
+    float speed_kmh;           // Vehicle speed (km/h)
+    float duty_cycle_pct;      // Inverter Duty Cycle (0.0% to 120.0%, >100% = Field Weakening)
+    float rpm;                 // Motor mechanical RPM
+    float throttle_pct;        // Throttle input percentage (0 - 100%)
 
-    // Electrical
-    float voltage;          // Battery pack voltage (V)
-    float current_amps;     // Motor / Battery current (A)
-    float power_watts;      // Power (W)
-    float battery_pct;      // Battery State of Charge (0 - 100%)
-    float amphours_used;    // Amp-hours consumed
+    // Electrical (Bafang Mid-Drive Tuned)
+    float voltage;             // Battery pack voltage (V)
+    float current_amps;        // Battery pack current (A, max 35A)
+    float phase_amps;          // Motor phase current (A, max 70A)
+    float power_watts;         // Power (W = V * I)
+    float amphours_used;       // Amp-hours consumed (Ah)
 
-    // Thermal
-    float temp_motor;       // Motor temperature (°C)
-    float temp_esc;         // Flipsky 75100 Mosfet/ESC temperature (°C)
+    // Smart Battery & Health State
+    uint8_t battery_profile_id;// 0 = Profile 1 (Fresh 52V), 1 = Profile 2 (Daily 52V)
+    float   battery_pct;       // Hybrid Fused State of Charge (0 - 100%)
+    float   remaining_wh;      // Remaining energy in pack (Wh)
+    float   battery_health_soh;// Learned battery health State of Health (SoH %)
+    float   est_range_km;      // Projected remaining range (km)
 
-    // Odometry
-    float trip_km;          // Trip distance (km)
-    float odo_km;           // Total odometer (km)
+    // Thermals
+    float temp_motor;          // Bafang motor temperature (°C)
+    float temp_esc;            // Flipsky 75100 Mosfet temperature (°C)
 
-    // Status & Navigation State
-    RidingMode mode;        // Active power map / riding mode
-    DashboardScreen screen; // Currently active screen/view
-    bool vesc_connected;    // UART communication healthy
-    uint32_t uptime_sec;    // System run time in seconds
+    // Odometry & Statistics
+    float trip_km;             // Trip distance (km)
+    float odo_km;              // Total lifetime odometer (km)
+    TripStatistics stats;      // Ride & energy statistics
+
+    // System Status
+    DashboardScreen screen;    // Currently active screen
+    bool vesc_connected;       // UART communication healthy
+    uint32_t uptime_sec;       // System run time in seconds
 };
