@@ -271,15 +271,16 @@ void DashboardRenderer::renderHorizontalTachScreen(const DashTelemetry &telemetr
         _canvas->setTextPadding(0);
     }
 
-    // 3. Center: Giant Speedometer (native Font8, 75px tall, crisp, no scaling blockiness)
+    // 3. Center: Giant Speedometer (native Font8, 75px tall, crisp, no scaling blockiness, zero-flicker text padding)
     int curSpeed = (int)roundf(telemetry.speed_kmh);
     if (curSpeed != _cache.speed) {
         _cache.speed = curSpeed;
-        _canvas->fillRect(cx - 95, 86, 190, 80, COLOR_BG);
         char speedStr[8];
         snprintf(speedStr, sizeof(speedStr), "%d", curSpeed);
         _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
+        _canvas->setTextPadding(200);
         _canvas->drawCenterString(speedStr, cx, 88, &fonts::Font8);
+        _canvas->setTextPadding(0);
     }
 
     // Ride Mode Pill: only redraw if changed
@@ -345,9 +346,10 @@ void DashboardRenderer::renderHorizontalTachScreen(const DashTelemetry &telemetr
     // 5. Status ribbon & Uptime Clock
     if (telemetry.vesc_connected != _cache.vesc_connected) {
         _cache.vesc_connected = telemetry.vesc_connected;
-        _canvas->fillRect(20, 303, 140, 16, COLOR_BG);
         _canvas->setTextColor(telemetry.vesc_connected ? COLOR_GREEN : COLOR_RED, COLOR_BG);
+        _canvas->setTextPadding(140);
         _canvas->drawString(telemetry.vesc_connected ? "● VESC UART" : "○ NO VESC", 20, 303, &fonts::Font2);
+        _canvas->setTextPadding(0);
     }
 
     int uptime = (int)telemetry.uptime_sec;
@@ -583,9 +585,10 @@ void DashboardRenderer::renderR1DialScreen(const DashTelemetry &telemetry) {
     // VESC Connection Indicator
     if (telemetry.vesc_connected != _cache.vesc_connected) {
         _cache.vesc_connected = telemetry.vesc_connected;
-        _canvas->fillRect(rX + 170, rY + 10, 110, 18, COLOR_BG);
         _canvas->setTextColor(telemetry.vesc_connected ? COLOR_GREEN : COLOR_RED, COLOR_BG);
+        _canvas->setTextPadding(110);
         _canvas->drawString(telemetry.vesc_connected ? "● VESC" : "○ NO VESC", rX + 170, rY + 10, &fonts::Font2);
+        _canvas->setTextPadding(0);
     }
 
     // Uptime Clock
@@ -600,15 +603,16 @@ void DashboardRenderer::renderR1DialScreen(const DashTelemetry &telemetry) {
         _canvas->setTextPadding(0);
     }
 
-    // Speed (crisp native Font8, 75px tall, 1:1 scale, zero blockiness, clean clear rect)
+    // Speed (crisp native Font8, 75px tall, 1:1 scale, zero blockiness, zero-flicker text padding)
     int curSpeed = (int)roundf(telemetry.speed_kmh);
     if (curSpeed != _cache.speed) {
         _cache.speed = curSpeed;
-        _canvas->fillRect(rX + 10, 68, 160, 78, COLOR_BG);
         char speedStr[8];
         snprintf(speedStr, sizeof(speedStr), "%d", curSpeed);
         _canvas->setTextColor(COLOR_WHITE, COLOR_BG);
+        _canvas->setTextPadding(155);
         _canvas->drawString(speedStr, rX + 15, 70, &fonts::Font8);
+        _canvas->setTextPadding(0);
     }
 
     // Power & Current (independent differential updates with zero-flicker text padding)
