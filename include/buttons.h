@@ -11,7 +11,7 @@ public:
     void update();
 
     // Mode switch: changes button behavior between normal menu/dash navigation and value editing
-    void setEditMode(bool in_edit) { _in_edit_mode = in_edit; }
+    void setEditMode(bool in_edit);
     bool isInEditMode() const { return _in_edit_mode; }
 
     NavAction getNavAction();
@@ -21,20 +21,22 @@ public:
 
 private:
     struct ButtonState {
-        uint8_t pin;
-        bool is_down;
+        uint8_t  pin;
+        bool     is_down;
         uint32_t press_start_ms;
         uint32_t last_repeat_ms;
-        bool long_press_fired;
+        bool     long_press_fired;
     };
 
     ButtonState _btn1;
     ButtonState _btn2;
     NavAction   _pending_action;
     bool        _in_edit_mode;
+    bool        _chord_locked;       // Active after dual-press until both buttons released
+    bool        _edit_wait_release;  // Require both buttons released before accepting edit taps
 
-    void updateNormalMode();
-    void updateEditMode();
+    void updateNormalMode(bool raw1, bool raw2, uint32_t now);
+    void updateEditMode(bool raw1, bool raw2, uint32_t now);
 };
 
 extern ButtonHandler Buttons;

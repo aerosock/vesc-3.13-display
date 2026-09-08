@@ -4,7 +4,9 @@ ButtonHandler Buttons;
 
 ButtonHandler::ButtonHandler()
     : _pending_action(NAV_NONE),
-      _in_edit_mode(false) {
+      _in_edit_mode(false),
+      _chord_locked(false),
+      _edit_wait_release(false) {
     _btn1 = { PIN_BTN_1, false, 0, 0, false };
     _btn2 = { PIN_BTN_2, false, 0, 0, false };
 }
@@ -14,39 +16,55 @@ void ButtonHandler::begin() {
     pinMode(_btn2.pin, INPUT_PULLUP);
 }
 
+void ButtonHandler::setEditMode(bool in_edit) {
+    _in_edit_mode = in_edit;
+    if (in_edit) {
+        _edit_wait_release = true; // Must release buttons before accepting edit taps!
+    } else {
+        _chord_locked = true;      // Must release buttons before accepting normal taps!
+    }
+    _btn1.is_down = false;
+    _btn2.is_down = false;
+}
+
 void ButtonHandler::update() {
     uint32_t now = millis();
     bool raw1 = (digitalRead(_btn1.pin) == LOW);
     bool raw2 = (digitalRead(_btn2.pin) == LOW);
 
-    // Both buttons pressed simultaneously
+    // If both buttons are released, clear chord locks and release gates
+    if (!raw1 && !raw2) {
+        _chord_locked = false;
+        _edit_wait_release = false;
+    }
+
+    // Both buttons pressed simultaneously -> Chord Action (SELECT / ENTER)
     if (raw1 && raw2) {
-        if (!_btn1.is_down || !_btn2.is_down) {
+        if (!_chord_locked) {
+            _chord_locked = true;
             _btn1.is_down = true;
             _btn2.is_down = true;
-            _btn1.press_start_ms = now;
-            _btn2.press_start_ms = now;
-            _btn1.long_press_fired = true; // Prevent trailing short clicks on release
+            _btn1.long_press_fired = true; // Suppress trailing single clicks
             _btn2.long_press_fired = true;
             _pending_action = NAV_BOTH_PRESSED;
-            return;
         }
         return;
     }
 
+    // If waiting for full release after a chord, ignore single button states
+    if (_chord_locked) {
+        return;
+    }
+
     if (_in_edit_mode) {
-        updateEditMode();
+        updateEditMode(raw1, raw2, now);
     } else {
-        updateNormalMode();
+        updateNormalMode(raw1, raw2, now);
     }
 }
 
-void ButtonHandler::updateNormalMode() {
-    uint32_t now = millis();
-    bool raw1 = (digitalRead(_btn1.pin) == LOW);
-    bool raw2 = (digitalRead(_btn2.pin) == LOW);
-
-    // Button 1 (SCL / GPIO 7) - UP / PREV / (Long: Open Settings)
+void ButtonHandler::updateNormalMode(bool raw1, bool raw2, uint32_t now) {
+    // Button 1 (SCL / GPIO 7) - UP / PREV / (Hold: Open Settings)
     if (raw1) {
         if (!_btn1.is_down) {
             _btn1.is_down = true;
@@ -62,13 +80,13 @@ void ButtonHandler::updateNormalMode() {
         if (_btn1.is_down) {
             _btn1.is_down = false;
             uint32_t dur = now - _btn1.press_start_ms;
-            if (dur >= 30 && !_btn1.long_press_fired) {
+            if (dur >= 30 && !_btn1.long_press_fired && !_chord_locked) {
                 _pending_action = NAV_BTN1_SHORT;
             }
         }
     }
 
-    // Button 2 (SDA / GPIO 15) - DOWN / NEXT / (Long: Exit / Trip Reset)
+    // Button 2 (SDA / GPIO 15) - DOWN / NEXT / (Hold: Exit / Trip Reset)
     if (raw2) {
         if (!_btn2.is_down) {
             _btn2.is_down = true;
@@ -84,7 +102,7 @@ void ButtonHandler::updateNormalMode() {
         if (_btn2.is_down) {
             _btn2.is_down = false;
             uint32_t dur = now - _btn2.press_start_ms;
-            if (dur >= 30 && !_btn2.long_press_fired) {
+            if (dur >= 30 && !_btn2.long_press_fired && !_chord_locked) {
                 _pending_action = NAV_BTN2_SHORT;
             }
         }
@@ -93,11 +111,11 @@ void ButtonHandler::updateNormalMode() {
 
 // In Edit Mode:
 // BTN1 = UP / Increment (+), BTN2 = DOWN / Decrement (-)
-// Holding down accelerates the repeating rate!
-void ButtonHandler::updateEditMode() {
-    uint32_t now = millis();
-    bool raw1 = (digitalRead(_btn1.pin) == LOW);
-    bool raw2 = (digitalRead(_btn2.pin) == LOW);
+// Single click = 1 step. Holding >= 500ms initiates repeat.
+void ButtonHandler::updateEditMode(bool raw1, bool raw2, uint32_t now) {
+    if (_edit_wait_release) {
+        return; // Ignore inputs until user lifts fingers from previous enter press
+    }
 
     // BTN1 (UP / Increment +)
     if (raw1) {
@@ -105,20 +123,16 @@ void ButtonHandler::updateEditMode() {
             _btn1.is_down = true;
             _btn1.press_start_ms = now;
             _btn1.last_repeat_ms = now;
-            _pending_action = NAV_EDIT_INC;
+            _pending_action = NAV_EDIT_INC; // Step once immediately!
         } else {
             uint32_t hold_time = now - _btn1.press_start_ms;
-            uint32_t repeat_interval = 160; // Base speed
-
-            if (hold_time > 2200) {
-                repeat_interval = 40;  // High speed
-            } else if (hold_time > 900) {
-                repeat_interval = 80;  // Medium speed
-            }
-
-            if (hold_time >= 350 && (now - _btn1.last_repeat_ms >= repeat_interval)) {
-                _btn1.last_repeat_ms = now;
-                _pending_action = NAV_EDIT_INC;
+            // 500ms initial hold delay before repeating starts
+            if (hold_time >= 500) {
+                uint32_t interval = (hold_time > 1800) ? 60 : 160;
+                if (now - _btn1.last_repeat_ms >= interval) {
+                    _btn1.last_repeat_ms = now;
+                    _pending_action = NAV_EDIT_INC;
+                }
             }
         }
     } else {
@@ -131,20 +145,16 @@ void ButtonHandler::updateEditMode() {
             _btn2.is_down = true;
             _btn2.press_start_ms = now;
             _btn2.last_repeat_ms = now;
-            _pending_action = NAV_EDIT_DEC;
+            _pending_action = NAV_EDIT_DEC; // Step once immediately!
         } else {
             uint32_t hold_time = now - _btn2.press_start_ms;
-            uint32_t repeat_interval = 160; // Base speed
-
-            if (hold_time > 2200) {
-                repeat_interval = 40;  // High speed
-            } else if (hold_time > 900) {
-                repeat_interval = 80;  // Medium speed
-            }
-
-            if (hold_time >= 350 && (now - _btn2.last_repeat_ms >= repeat_interval)) {
-                _btn2.last_repeat_ms = now;
-                _pending_action = NAV_EDIT_DEC;
+            // 500ms initial hold delay before repeating starts
+            if (hold_time >= 500) {
+                uint32_t interval = (hold_time > 1800) ? 60 : 160;
+                if (now - _btn2.last_repeat_ms >= interval) {
+                    _btn2.last_repeat_ms = now;
+                    _pending_action = NAV_EDIT_DEC;
+                }
             }
         }
     } else {

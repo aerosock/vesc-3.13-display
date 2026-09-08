@@ -54,7 +54,10 @@ private:
 
     // Common UI Helpers
     void drawCard(int x, int y, int w, int h, uint16_t bg, uint16_t border);
-    void drawValWithUnit(int x, int y, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol);
+    void drawValWithUnit(int x, int y, int w, int h, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol, uint16_t bgCol = 0x0821);
+
+    // Off-screen Double Buffer Sprite for Zero-Flicker Metric Rendering
+    LGFX_Sprite _metric_sprite;
 
     // Screen State
     DashboardScreen _active_screen;
@@ -89,6 +92,16 @@ private:
         bool vesc_connected;
         uint8_t batt_prof;
 
+        // Statistics Screen Caches
+        int peak_watts;
+        int peak_curr_x10;
+        int peak_phase_x10;
+        int max_spd_x10;
+        int avg_spd_x10;
+        int eff_x10;
+        int soh_x10;
+        uint32_t ride_sec;
+
         void invalidate() {
             speed = -999;
             duty_x10 = -999;
@@ -107,6 +120,15 @@ private:
             uptime = -1;
             vesc_connected = false;
             batt_prof = 255;
+
+            peak_watts = -99999;
+            peak_curr_x10 = -1;
+            peak_phase_x10 = -1;
+            max_spd_x10 = -1;
+            avg_spd_x10 = -1;
+            eff_x10 = -1;
+            soh_x10 = -1;
+            ride_sec = 0xFFFFFFFF;
         }
     } _cache;
 
