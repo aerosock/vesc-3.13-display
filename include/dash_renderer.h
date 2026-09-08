@@ -54,10 +54,7 @@ private:
 
     // Common UI Helpers
     void drawCard(int x, int y, int w, int h, uint16_t bg, uint16_t border);
-    void drawValWithUnit(int x, int y, int w, int h, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol, uint16_t bgCol = 0x0821);
-
-    // Off-screen Double Buffer Sprite for Zero-Flicker Metric Rendering
-    LGFX_Sprite _metric_sprite;
+    void drawValWithUnit(int x, int y, int numPadW, int unitPadW, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol, uint16_t bgCol = 0x0821);
 
     // Screen State
     DashboardScreen _active_screen;

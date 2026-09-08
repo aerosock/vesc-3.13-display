@@ -79,9 +79,6 @@ DashboardRenderer::DashboardRenderer()
 void DashboardRenderer::begin(DisplayDriver *display) {
     _display = display;
     _canvas = display->getCanvas();
-    _metric_sprite.setColorDepth(16);
-    _metric_sprite.setPsram(false); // Allocate in internal SRAM for fast push
-    _metric_sprite.createSprite(220, 52);
     _cache.invalidate();
     _screen_dirty = true;
     _active_style = (DashboardStyle)Settings.get().dash_style;
@@ -92,17 +89,17 @@ void DashboardRenderer::drawCard(int x, int y, int w, int h, uint16_t bg, uint16
     _canvas->drawRoundRect(x, y, w, h, 8, border);
 }
 
-// Zero-flicker metric rendering using off-screen SRAM sprite
-void DashboardRenderer::drawValWithUnit(int x, int y, int w, int h, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol, uint16_t bgCol) {
-    if (w > 220) w = 220;
-    if (h > 52) h = 52;
-    _metric_sprite.fillSprite(bgCol);
-    _metric_sprite.setTextColor(numCol, bgCol);
-    _metric_sprite.drawString(numStr, 0, 0, &fonts::Font6);
-    int nw = _metric_sprite.textWidth(numStr, &fonts::Font6);
-    _metric_sprite.setTextColor(unitCol, bgCol);
-    _metric_sprite.drawString(unitStr, nw + 6, 16, &fonts::Font4);
-    _metric_sprite.pushSprite(x, y);
+// Zero-flicker native text padding renderer for number + unit
+void DashboardRenderer::drawValWithUnit(int x, int y, int numPadW, int unitPadW, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol, uint16_t bgCol) {
+    _canvas->setTextColor(numCol, bgCol);
+    _canvas->setTextPadding(numPadW);
+    _canvas->drawString(numStr, x, y, &fonts::Font6);
+
+    _canvas->setTextColor(unitCol, bgCol);
+    _canvas->setTextPadding(unitPadW);
+    _canvas->drawString(unitStr, x + numPadW + 4, y + 16, &fonts::Font4);
+
+    _canvas->setTextPadding(0);
 }
 
 void DashboardRenderer::triggerNeedleSweep() {
@@ -431,7 +428,7 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         _canvas->setTextPadding(0);
     }
 
-    // 6. Left Flank: Power & Phase Amps (Zero-flicker sprite with dynamic color)
+    // 6. Left Flank: Power & Phase Amps (Zero-flicker native padding with dynamic color)
     int curWatts = (int)roundf(telemetry.power_watts);
     if (curWatts != _cache.watts) {
         _cache.watts = curWatts;
@@ -439,10 +436,10 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         uint16_t pCol = getPowerColor(telemetry.power_watts);
         if (curWatts >= 1000) {
             snprintf(numStr, sizeof(numStr), "%.2f", curWatts / 1000.0f);
-            drawValWithUnit(245, 74, 180, 48, numStr, "kW", pCol, COLOR_LIGHT_GRAY);
+            drawValWithUnit(245, 74, 115, 50, numStr, "kW", pCol, COLOR_LIGHT_GRAY);
         } else {
             snprintf(numStr, sizeof(numStr), "%d", curWatts);
-            drawValWithUnit(245, 74, 180, 48, numStr, "W", pCol, COLOR_LIGHT_GRAY);
+            drawValWithUnit(245, 74, 115, 50, numStr, "W", pCol, COLOR_LIGHT_GRAY);
         }
     }
 
@@ -452,17 +449,17 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         char numStr[16];
         snprintf(numStr, sizeof(numStr), "%.0f", telemetry.phase_amps);
         uint16_t phCol = getPhaseColor(telemetry.phase_amps);
-        drawValWithUnit(245, 172, 180, 48, numStr, "A", phCol, COLOR_LIGHT_GRAY);
+        drawValWithUnit(245, 172, 115, 50, numStr, "A", phCol, COLOR_LIGHT_GRAY);
     }
 
-    // 7. Right Flank: Battery % and Remaining Wh (Zero-flicker sprite with dynamic color)
+    // 7. Right Flank: Battery % and Remaining Wh (Zero-flicker native padding with dynamic color)
     int curBat = (int)roundf(telemetry.battery_pct);
     if (curBat != _cache.battery_pct) {
         _cache.battery_pct = curBat;
         char numStr[16];
         snprintf(numStr, sizeof(numStr), "%d", curBat);
         uint16_t bCol = getBatteryColor(telemetry.battery_pct);
-        drawValWithUnit(660, 74, 150, 48, numStr, "%", bCol, bCol);
+        drawValWithUnit(660, 74, 85, 45, numStr, "%", bCol, bCol);
     }
 
     int curRemWh = (int)roundf(telemetry.remaining_wh);
@@ -470,7 +467,7 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         _cache.remaining_wh = curRemWh;
         char numStr[16];
         snprintf(numStr, sizeof(numStr), "%d", curRemWh);
-        drawValWithUnit(660, 172, 150, 48, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
+        drawValWithUnit(660, 172, 115, 50, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
     }
 
     // 8. Bottom Strip: Trip, Clean Thermals, Battery SoH (Positioned at y=282)
@@ -603,7 +600,7 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         _canvas->setTextPadding(0);
     }
 
-    // 3. Left Flank: Power & Phase Current (Zero-flicker sprite with dynamic color)
+    // 3. Left Flank: Power & Phase Current (Zero-flicker native padding with dynamic color)
     int curWatts = (int)roundf(telemetry.power_watts);
     if (curWatts != _cache.watts) {
         _cache.watts = curWatts;
@@ -611,10 +608,10 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         uint16_t pCol = getPowerColor(telemetry.power_watts);
         if (curWatts >= 1000) {
             snprintf(numStr, sizeof(numStr), "%.2f", curWatts / 1000.0f);
-            drawValWithUnit(30, 80, 180, 48, numStr, "kW", pCol, COLOR_LIGHT_GRAY);
+            drawValWithUnit(30, 80, 115, 50, numStr, "kW", pCol, COLOR_LIGHT_GRAY);
         } else {
             snprintf(numStr, sizeof(numStr), "%d", curWatts);
-            drawValWithUnit(30, 80, 180, 48, numStr, "W", pCol, COLOR_LIGHT_GRAY);
+            drawValWithUnit(30, 80, 115, 50, numStr, "W", pCol, COLOR_LIGHT_GRAY);
         }
     }
 
@@ -624,17 +621,17 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         char numStr[16];
         snprintf(numStr, sizeof(numStr), "%.0f", telemetry.phase_amps);
         uint16_t phCol = getPhaseColor(telemetry.phase_amps);
-        drawValWithUnit(30, 176, 180, 48, numStr, "A", phCol, COLOR_LIGHT_GRAY);
+        drawValWithUnit(30, 176, 115, 50, numStr, "A", phCol, COLOR_LIGHT_GRAY);
     }
 
-    // 4. Right Flank: Battery % & Remaining Wh (Zero-flicker sprite with dynamic color)
+    // 4. Right Flank: Battery % & Remaining Wh (Zero-flicker native padding with dynamic color)
     int curBat = (int)roundf(telemetry.battery_pct);
     if (curBat != _cache.battery_pct) {
         _cache.battery_pct = curBat;
         char numStr[16];
         snprintf(numStr, sizeof(numStr), "%d", curBat);
         uint16_t bCol = getBatteryColor(telemetry.battery_pct);
-        drawValWithUnit(660, 80, 150, 48, numStr, "%", bCol, bCol);
+        drawValWithUnit(660, 80, 85, 45, numStr, "%", bCol, bCol);
     }
 
     int curRemWh = (int)roundf(telemetry.remaining_wh);
@@ -642,7 +639,7 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         _cache.remaining_wh = curRemWh;
         char numStr[16];
         snprintf(numStr, sizeof(numStr), "%d", curRemWh);
-        drawValWithUnit(660, 176, 150, 48, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
+        drawValWithUnit(660, 176, 115, 50, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
     }
 
     // 5. Bottom Status Strip (Positioned at y=282, utilizing full 320px height)
@@ -757,7 +754,7 @@ void DashboardRenderer::renderEnergyStatsScreen(const DashTelemetry &telemetry) 
         _canvas->setTextPadding(0);
     }
 
-    // Card 1: Hero Metric (Avg Efficiency Wh/km) - Zero flicker update via sprite
+    // Card 1: Hero Metric (Avg Efficiency Wh/km) - Zero flicker update via native padding
     int curEffX10 = (int)roundf(telemetry.stats.trip_wh_km * 10.0f);
     if (curEffX10 != _cache.eff_x10) {
         _cache.eff_x10 = curEffX10;
@@ -767,13 +764,13 @@ void DashboardRenderer::renderEnergyStatsScreen(const DashTelemetry &telemetry) 
         } else {
             snprintf(effStr, sizeof(effStr), "--.-");
         }
-        drawValWithUnit(40, 108, 340, 48, effStr, "Wh/km", COLOR_WHITE, COLOR_CYAN, COLOR_SURFACE);
+        drawValWithUnit(40, 108, 125, 90, effStr, "Wh/km", COLOR_WHITE, COLOR_CYAN, COLOR_SURFACE);
     }
 
     // Card 1: Secondary Key-Value Rows (Only redraw on change)
     char buf[32];
     int curTripWh = (int)roundf(telemetry.stats.trip_wh);
-    if (curTripWh != _cache.watts) { // repurpose or check
+    if (curTripWh != _cache.watts) {
         snprintf(buf, sizeof(buf), "%.0f Wh", telemetry.stats.trip_wh);
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
         _canvas->setTextPadding(140);
@@ -811,13 +808,13 @@ void DashboardRenderer::renderEnergyStatsScreen(const DashTelemetry &telemetry) 
         _canvas->setTextPadding(0);
     }
 
-    // Card 2: Hero Metric (Health SoH %) - Zero flicker update via sprite
+    // Card 2: Hero Metric (Health SoH %) - Zero flicker update via native padding
     int curSohX10 = (int)roundf(telemetry.battery_health_soh * 10.0f);
     if (curSohX10 != _cache.soh_x10) {
         _cache.soh_x10 = curSohX10;
         char sohStr[16];
         snprintf(sohStr, sizeof(sohStr), "%.1f", telemetry.battery_health_soh);
-        drawValWithUnit(435, 108, 340, 48, sohStr, "%", COLOR_GREEN, COLOR_GREEN, COLOR_SURFACE);
+        drawValWithUnit(435, 108, 110, 45, sohStr, "%", COLOR_GREEN, COLOR_GREEN, COLOR_SURFACE);
     }
 
     // Card 2: Secondary Key-Value Rows
@@ -834,6 +831,7 @@ void DashboardRenderer::renderEnergyStatsScreen(const DashTelemetry &telemetry) 
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
         _canvas->setTextPadding(140);
         _canvas->drawRightString(buf, 780, 202, &fonts::Font4);
+        _canvas->setTextPadding(0);
 
         snprintf(buf, sizeof(buf), "%.0f Wh", prof.nominal_wh);
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
@@ -912,7 +910,7 @@ void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
         _canvas->setTextPadding(0);
     }
 
-    // Card 1: Hero Metric (Peak Power) - Zero flicker update via sprite
+    // Card 1: Hero Metric (Peak Power) - Zero flicker update via native padding
     int curPeakWatts = (int)roundf(telemetry.stats.peak_power_watts);
     if (curPeakWatts != _cache.peak_watts) {
         _cache.peak_watts = curPeakWatts;
@@ -926,7 +924,7 @@ void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
             pUnit = "W";
         }
         uint16_t pCol = getPowerColor(telemetry.stats.peak_power_watts);
-        drawValWithUnit(40, 108, 340, 48, pNumStr, pUnit, pCol, COLOR_AMBER, COLOR_SURFACE);
+        drawValWithUnit(40, 108, 125, 55, pNumStr, pUnit, pCol, COLOR_AMBER, COLOR_SURFACE);
     }
 
     // Card 1: Secondary Key-Value Rows (Only update when value changes)
@@ -971,13 +969,13 @@ void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
         _canvas->setTextPadding(0);
     }
 
-    // Card 2: Hero Metric (Max Speed) - Zero flicker update via sprite
+    // Card 2: Hero Metric (Max Speed) - Zero flicker update via native padding
     int curMaxSpdX10 = (int)roundf(telemetry.stats.max_speed_kmh * 10.0f);
     if (curMaxSpdX10 != _cache.max_spd_x10) {
         _cache.max_spd_x10 = curMaxSpdX10;
         char spdNumStr[16];
         snprintf(spdNumStr, sizeof(spdNumStr), "%.1f", telemetry.stats.max_speed_kmh);
-        drawValWithUnit(435, 108, 340, 48, spdNumStr, "km/h", getSpeedColor(telemetry.stats.max_speed_kmh), COLOR_CYAN, COLOR_SURFACE);
+        drawValWithUnit(435, 108, 125, 80, spdNumStr, "km/h", getSpeedColor(telemetry.stats.max_speed_kmh), COLOR_CYAN, COLOR_SURFACE);
     }
 
     // Card 2: Secondary Key-Value Rows
