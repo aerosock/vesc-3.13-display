@@ -22,7 +22,9 @@ public:
 private:
     struct ButtonState {
         uint8_t  pin;
+        bool     raw_state;
         bool     is_down;
+        uint32_t last_change_ms;
         uint32_t press_start_ms;
         uint32_t last_repeat_ms;
         bool     long_press_fired;

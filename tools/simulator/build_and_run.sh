@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "=== Compiling VESC Display Simulator ==="
-g++ -std=c++14 -O2 -DLGFX_LINUX_FB -DNATIVE_SIMULATOR \
+g++ -std=c++17 -O2 -DLGFX_LINUX_FB -DNATIVE_SIMULATOR \
   -Itools/simulator/include \
   -Iinclude \
   -I.pio/libdeps/waveshare-esp32-s3-lcd-316/LovyanGFX/src \
