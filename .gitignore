@@ -17,3 +17,5 @@ Thumbs.db
 *.bin
 *.elf
 *.hex
+*.bmp
+tools/simulator/simulator

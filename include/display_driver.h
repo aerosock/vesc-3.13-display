@@ -3,6 +3,9 @@
 #define LGFX_USE_V1
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
+#ifdef NATIVE_SIMULATOR
+#include "../tools/simulator/include/display_driver.h"
+#else
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include "board_config.h"
@@ -39,3 +42,4 @@ private:
 };
 
 extern DisplayDriver Display;
+#endif

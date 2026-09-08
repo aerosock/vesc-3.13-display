@@ -89,15 +89,18 @@ void DashboardRenderer::drawCard(int x, int y, int w, int h, uint16_t bg, uint16
     _canvas->drawRoundRect(x, y, w, h, 8, border);
 }
 
-// Zero-flicker native text padding renderer for number + unit
+// Zero-flicker native text padding renderer with snug unit placement
 void DashboardRenderer::drawValWithUnit(int x, int y, int numPadW, int unitPadW, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol, uint16_t bgCol) {
+    int nw = _canvas->textWidth(numStr, &fonts::Font6);
+    int totalBoxW = numPadW + unitPadW;
+
     _canvas->setTextColor(numCol, bgCol);
-    _canvas->setTextPadding(numPadW);
+    _canvas->setTextPadding(totalBoxW);
     _canvas->drawString(numStr, x, y, &fonts::Font6);
 
     _canvas->setTextColor(unitCol, bgCol);
-    _canvas->setTextPadding(unitPadW);
-    _canvas->drawString(unitStr, x + numPadW + 4, y + 16, &fonts::Font4);
+    _canvas->setTextPadding(std::max(0, totalBoxW - (nw + 5)));
+    _canvas->drawString(unitStr, x + nw + 5, y + 16, &fonts::Font4);
 
     _canvas->setTextPadding(0);
 }
@@ -400,7 +403,7 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         _cache.vesc_connected = telemetry.vesc_connected;
         _canvas->setTextColor(telemetry.vesc_connected ? COLOR_GREEN : COLOR_RED, COLOR_BG);
         _canvas->setTextPadding(110);
-        _canvas->drawRightString(telemetry.vesc_connected ? "● VESC" : "○ NO VESC", 805, 12, &fonts::Font4);
+        _canvas->drawRightString(telemetry.vesc_connected ? "VESC" : "NO VESC", 805, 12, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
 
@@ -682,15 +685,15 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         char tStr[36];
         snprintf(tStr, sizeof(tStr), "M %d C  E %d C", mTemp, eTemp);
         _canvas->setTextColor(getTempColor(fmaxf(telemetry.temp_motor, telemetry.temp_esc)), COLOR_BG);
-        _canvas->setTextPadding(190);
-        _canvas->drawString(tStr, 535, 282, &fonts::Font4);
+        _canvas->setTextPadding(140);
+        _canvas->drawString(tStr, 490, 282, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
 
     char sohStr[20];
     snprintf(sohStr, sizeof(sohStr), "SoH %.0f%%", telemetry.battery_health_soh);
     _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
-    _canvas->setTextPadding(120);
+    _canvas->setTextPadding(85);
     _canvas->drawRightString(sohStr, 800, 282, &fonts::Font4);
     _canvas->setTextPadding(0);
 }
@@ -875,8 +878,8 @@ void DashboardRenderer::initPerfStatsScreen(const DashTelemetry &telemetry) {
     _canvas->drawString("PEAK ELECTRICAL POWER", 40, 88, &fonts::Font4);
     _canvas->drawFastHLine(40, 160, 345, COLOR_BORDER);
 
-    _canvas->drawString("Peak Battery Current:", 40, 172, &fonts::Font4);
-    _canvas->drawString("Peak Phase Current:", 40, 202, &fonts::Font4);
+    _canvas->drawString("Peak Battery Curr:", 40, 172, &fonts::Font4);
+    _canvas->drawString("Peak Phase Curr:", 40, 202, &fonts::Font4);
     _canvas->drawString("Peak Motor Temp:", 40, 232, &fonts::Font4);
     _canvas->drawString("Peak ESC Temp:", 40, 262, &fonts::Font4);
 
@@ -934,7 +937,7 @@ void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
         _cache.peak_curr_x10 = curPeakCurrX10;
         snprintf(buf, sizeof(buf), "%.1f A", telemetry.stats.peak_current_amps);
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-        _canvas->setTextPadding(140);
+        _canvas->setTextPadding(80);
         _canvas->drawRightString(buf, 385, 172, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
@@ -944,7 +947,7 @@ void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
         _cache.peak_phase_x10 = curPeakPhaseX10;
         snprintf(buf, sizeof(buf), "%.1f A", telemetry.stats.peak_phase_amps);
         _canvas->setTextColor(getPhaseColor(telemetry.stats.peak_phase_amps), COLOR_SURFACE);
-        _canvas->setTextPadding(140);
+        _canvas->setTextPadding(80);
         _canvas->drawRightString(buf, 385, 202, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
@@ -954,7 +957,7 @@ void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
         _cache.temp_motor = curMaxMot;
         snprintf(buf, sizeof(buf), "%.1f C", telemetry.stats.max_temp_motor);
         _canvas->setTextColor(getTempColor(telemetry.stats.max_temp_motor), COLOR_SURFACE);
-        _canvas->setTextPadding(140);
+        _canvas->setTextPadding(80);
         _canvas->drawRightString(buf, 385, 232, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
@@ -964,7 +967,7 @@ void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
         _cache.temp_esc = curMaxEsc;
         snprintf(buf, sizeof(buf), "%.1f C", telemetry.stats.max_temp_esc);
         _canvas->setTextColor(getTempColor(telemetry.stats.max_temp_esc), COLOR_SURFACE);
-        _canvas->setTextPadding(140);
+        _canvas->setTextPadding(80);
         _canvas->drawRightString(buf, 385, 262, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
