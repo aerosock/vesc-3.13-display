@@ -56,7 +56,7 @@ void renderAndSave(const char *name, DashTelemetry &t) {
 }
 
 void testButtonDebouncing() {
-    printf("\n=== Running Button Debounce & Edit Mode Unit Tests ===\n");
+    printf("\n=== Running Button Debounce & Chord State Machine Unit Tests ===\n");
     Buttons.begin();
 
     auto setPin = [&](int pin, int state) {
@@ -67,7 +67,7 @@ void testButtonDebouncing() {
     // 1. Initial State: All released (HIGH)
     setPin(PIN_BTN_1, HIGH);
     setPin(PIN_BTN_2, HIGH);
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 15; i++) {
         simAdvanceMs(10);
         Buttons.update();
     }
@@ -76,11 +76,12 @@ void testButtonDebouncing() {
     assert(!Buttons.isBtn2Down());
     printf("[PASS] Buttons idle at boot.\n");
 
-    // 2. Simulate Bouncy Click on BTN2 in Edit Mode
+    // 2. Simulate Single Click on BTN2 in Edit Mode (with contact chatter and chord window)
     Buttons.setEditMode(true);
-    // Note: setEditMode requires full release first (_edit_wait_release)
-    simAdvanceMs(10);
-    Buttons.update();
+    for (int i = 0; i < 15; i++) {
+        simAdvanceMs(10);
+        Buttons.update();
+    }
 
     int dec_count = 0;
     int other_count = 0;
@@ -104,23 +105,20 @@ void testButtonDebouncing() {
     stepAndCheck(3);
     setPin(PIN_BTN_2, LOW); // stable closed from here
 
-    // During chatter (first 10ms), NO actions should fire!
+    // During chatter (first 10ms), NO actions should fire
     assert(dec_count == 0);
     assert(other_count == 0);
 
-    // Advance 30ms (total 30ms stable) -> still under 35ms debounce threshold
-    stepAndCheck(30);
+    // Advance 28ms (debounce passes, enters chord window) -> still waiting for chord window
+    stepAndCheck(28);
     assert(dec_count == 0);
 
-    // Advance 10ms (total 40ms stable > 35ms) -> should fire NAV_EDIT_DEC exactly once!
-    stepAndCheck(10);
+    // Advance chord window (90ms) -> should fire NAV_EDIT_DEC exactly once!
+    stepAndCheck(90);
     assert(dec_count == 1);
+    assert(other_count == 0);
 
-    // Advance another 20ms (button still held, total hold ~60ms < 500ms auto-repeat)
-    stepAndCheck(20);
-    assert(dec_count == 1);
-
-    // Now simulate release chatter:
+    // Release chatter
     setPin(PIN_BTN_2, HIGH);
     stepAndCheck(2);
     setPin(PIN_BTN_2, LOW);
@@ -128,41 +126,44 @@ void testButtonDebouncing() {
     setPin(PIN_BTN_2, HIGH); // stable open
     stepAndCheck(50);
 
-    // Still should be exactly 1 action total! (No extra decrement on release or chatter)
+    // Exactly 1 action total (no skips, no release bounces)
     assert(dec_count == 1);
     assert(other_count == 0);
     assert(!Buttons.isBtn2Down());
-    printf("[PASS] Single click on BTN2 with contact bounce fired exactly 1 NAV_EDIT_DEC (no skips)!\n");
+    printf("[PASS] Single click in Edit Mode with contact bounce fired exactly 1 NAV_EDIT_DEC.\n");
 
-    // 3. Test Auto-Repeat on Long Press (> 500ms) in Edit Mode
+    // 3. Test Auto-Repeat on Long Press in Edit Mode
     dec_count = 0;
     setPin(PIN_BTN_2, LOW); // Press down
-    stepAndCheck(40); // Debounce passes
-    assert(dec_count == 1); // 1st tap immediately
+    stepAndCheck(28); // Debounce passes
+    stepAndCheck(90); // Chord window passes -> 1st tap fires immediately!
+    assert(dec_count == 1);
 
-    // Hold for 400ms (total 440ms < 500ms) -> no repeat yet
-    for (int i = 0; i < 8; i++) {
+    // Hold for 300ms (total hold ~418ms < 450ms) -> no repeat yet
+    for (int i = 0; i < 6; i++) {
         stepAndCheck(50);
     }
     assert(dec_count == 1);
 
-    // Reach 500ms+ -> repeats should start firing at ~160ms intervals
-    stepAndCheck(100); // now at 500ms hold
+    // Reach 450ms+ -> repeats start at 150ms intervals
+    stepAndCheck(60);
     assert(dec_count == 2); // First repeat fired!
 
-    stepAndCheck(160);
+    stepAndCheck(150);
     assert(dec_count == 3);
 
-    // Release
+    // Release and wait cooldown
     setPin(PIN_BTN_2, HIGH);
-    stepAndCheck(50);
+    stepAndCheck(150);
     assert(!Buttons.isBtn2Down());
-    printf("[PASS] Long press auto-repeat initiates strictly after 500ms hold.\n");
+    printf("[PASS] Long press auto-repeat in Edit Mode initiates cleanly after hold threshold.\n");
 
     // 4. Test Normal Mode: Click on BTN1 gives NAV_BTN1_SHORT on release
     Buttons.setEditMode(false);
-    simAdvanceMs(50);
-    Buttons.update();
+    for (int i = 0; i < 15; i++) {
+        simAdvanceMs(10);
+        Buttons.update();
+    }
 
     int btn1_short = 0, btn1_long = 0;
     NavAction last_act = NAV_NONE;
@@ -175,33 +176,72 @@ void testButtonDebouncing() {
     };
 
     setPin(PIN_BTN_1, LOW);
-    stepNormal(40); // Debounced press
-    assert(btn1_short == 0); // Not fired on press in normal mode!
+    stepNormal(30); // Debounced press
+    assert(btn1_short == 0);
     assert(btn1_long == 0);
-    stepNormal(100); // 140ms hold (< 500ms)
+    stepNormal(100); // 130ms hold (< 500ms)
     setPin(PIN_BTN_1, HIGH); // Release
-    stepNormal(40); // Debounced release
+    stepNormal(30); // Debounced release
+    stepNormal(90); // Chord window expires
     assert(btn1_short == 1); // Fired once on release!
     assert(btn1_long == 0);
-    printf("[PASS] Normal mode generates NAV_BTN1_SHORT exactly once on release.\n");
+    printf("[PASS] Normal mode generates NAV_BTN1_SHORT cleanly on release.\n");
 
-    // 5. Test Dual-Press (Chord: BTN1 + BTN2)
-    setPin(PIN_BTN_1, LOW);
-    setPin(PIN_BTN_2, LOW);
-    stepNormal(40);
-    assert(last_act == NAV_BOTH_PRESSED);
+    // 5. Test Asynchronous Dual-Press (Skewed Finger Timing: BTN1 pressed 50ms before BTN2)
+    btn1_short = 0;
+    int both_pressed = 0;
+    auto stepChord = [&](uint32_t step_ms) {
+        simAdvanceMs(step_ms);
+        Buttons.update();
+        last_act = Buttons.getNavAction();
+        if (last_act == NAV_BOTH_PRESSED) both_pressed++;
+        if (last_act == NAV_BTN1_SHORT) btn1_short++;
+    };
 
-    // Release BTN1 first, keep BTN2 down
+    setPin(PIN_BTN_1, LOW); // Finger 1 presses BTN1 first!
+    stepChord(30);          // BTN1 debounced, enters chord window
+    assert(btn1_short == 0); // Must NOT fire single press yet!
+
+    setPin(PIN_BTN_2, LOW); // Finger 2 presses BTN2 30ms later!
+    stepChord(30);          // BTN2 debounces, triggers chord immediately!
+    assert(both_pressed == 1);
+    assert(btn1_short == 0); // No accidental single button leak!
+    printf("[PASS] Asynchronous dual-press (skewed finger timing) triggered NAV_BOTH_PRESSED with 0 leaks.\n");
+
+    // 6. Test Hold Both Buttons with Microvibrations (Zero Repeated Presses!)
+    // Both buttons are held for 1500ms while microvibrations occur
+    for (int cycle = 0; cycle < 10; cycle++) {
+        // Microvibration on BTN1 (momentary 5ms contact break)
+        setPin(PIN_BTN_1, HIGH);
+        stepChord(5);
+        setPin(PIN_BTN_1, LOW);
+        stepChord(45);
+
+        // Microvibration on BTN2 (momentary 5ms contact break)
+        setPin(PIN_BTN_2, HIGH);
+        stepChord(5);
+        setPin(PIN_BTN_2, LOW);
+        stepChord(45);
+    }
+    // Must STILL be exactly 1 both_pressed count! (Microvibrations NEVER created dozens of presses!)
+    assert(both_pressed == 1);
+    printf("[PASS] Holding both buttons with microvibrations produced exactly 1 press (no accidental repeats).\n");
+
+    // 7. Test Asymmetric Release with Cooldown
+    // Finger 1 releases first, then Finger 2 releases 50ms later
     setPin(PIN_BTN_1, HIGH);
-    stepNormal(40);
-    assert(last_act == NAV_NONE); // Chord locked! No accidental single click!
+    stepChord(30); // BTN1 released
+    assert(last_act == NAV_NONE); // Locked!
 
-    // Release BTN2
     setPin(PIN_BTN_2, HIGH);
-    stepNormal(40);
-    assert(last_act == NAV_NONE); // Still no accidental click on chord exit!
-    printf("[PASS] Dual-press chord lock prevents spurious clicks upon asymmetric finger release.\n");
-    printf("=== All Button Debounce Tests PASSED! ===\n\n");
+    stepChord(30); // BTN2 released
+    assert(last_act == NAV_NONE); // Still locked in release cooldown!
+
+    stepChord(150); // Cooldown completes cleanly
+    assert(both_pressed == 1);
+    assert(btn1_short == 0);
+    printf("[PASS] Asymmetric finger release and cooldown completed cleanly without leaking clicks.\n");
+    printf("=== All Button Debounce & Chord Tests PASSED! ===\n\n");
 }
 
 int main(int argc, char **argv) {

@@ -1487,7 +1487,7 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
                 _menu_sub_idx = (_menu_sub_idx + 1) % total;
                 _menu_dirty = true;
             }
-        } else if (action == NAV_BOTH_PRESSED) { // SELECT / ENTER
+        } else if (action == NAV_BOTH_PRESSED || action == NAV_BTN1_LONG) { // SELECT / ENTER
             if (_menu_root_idx == 2 && _menu_sub_idx == 3) {
                 // Reset Learning
                 Battery.resetProfileLearning(Settings.get().active_battery_profile);
@@ -1510,7 +1510,7 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
                 _menu_last_activity_ms = millis();
                 _menu_dirty = true;
             }
-        } else if (action == NAV_BTN2_LONG || action == NAV_BTN1_LONG) { // BACK
+        } else if (action == NAV_BTN2_LONG) { // BACK
             _menu_in_sub = false;
             _menu_dirty = true;
         }
@@ -1522,11 +1522,11 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
         } else if (action == NAV_BTN2_SHORT) { // Cursor DOWN
             _menu_root_idx = (_menu_root_idx + 1) % 5;
             _menu_dirty = true;
-        } else if (action == NAV_BOTH_PRESSED) { // ENTER SUBMENU
+        } else if (action == NAV_BOTH_PRESSED || action == NAV_BTN1_LONG) { // ENTER SUBMENU
             _menu_in_sub = true;
             _menu_sub_idx = 0;
             _menu_dirty = true;
-        } else if (action == NAV_BTN2_LONG || action == NAV_BTN1_LONG) { // EXIT SETTINGS
+        } else if (action == NAV_BTN2_LONG) { // EXIT SETTINGS
             telemetry.screen = SCREEN_RIDE_DASH;
             _screen_dirty = true;
             _cache.invalidate();

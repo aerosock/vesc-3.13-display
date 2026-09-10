@@ -28,17 +28,20 @@ private:
         uint32_t press_start_ms;
         uint32_t last_repeat_ms;
         bool     long_press_fired;
+        bool     single_pending;   // Debounced press waiting in chord window
+        uint32_t pending_since_ms; // When single press was confirmed debounced
     };
 
     ButtonState _btn1;
     ButtonState _btn2;
     NavAction   _pending_action;
     bool        _in_edit_mode;
-    bool        _chord_locked;       // Active after dual-press until both buttons released
-    bool        _edit_wait_release;  // Require both buttons released before accepting edit taps
 
-    void updateNormalMode(bool raw1, bool raw2, uint32_t now);
-    void updateEditMode(bool raw1, bool raw2, uint32_t now);
+    bool        _chord_active;     // Active from chord detection through release cooldown
+    uint32_t    _all_up_since_ms;  // Timestamp since both buttons are continuously unpressed
+    bool        _require_all_up;   // Lockout gate: must see both buttons released before accepting taps
+
+    void processDebounce(ButtonState &btn, bool raw, uint32_t now);
 };
 
 extern ButtonHandler Buttons;
