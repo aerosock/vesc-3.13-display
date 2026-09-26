@@ -315,6 +315,14 @@ void DashboardRenderer::initLeftHugAnalogStyle(const DashTelemetry &telemetry) {
 
     // 6. Right Cockpit - Bottom Strip Divider (Moved down to y=270, eliminating 4-5mm dead space)
     _canvas->drawFastHLine(235, 270, 575, COLOR_BORDER);
+
+    // 7. Throttle Input Track & Label (Centered at x=525, y=235)
+    _canvas->fillRoundRect(450, 235, 150, 16, 3, COLOR_SURFACE);
+    _canvas->drawRoundRect(450, 235, 150, 16, 3, COLOR_BORDER);
+    _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_BG);
+    _canvas->drawString("THR", 416, 235, &fonts::Font2);
+    _cache.throttle_fill_w = -1;
+    _cache.throttle_pct = -1;
 }
 
 void DashboardRenderer::drawAnalogNeedle(int cx, int cy, int length, float angle_rad, uint16_t color) {
@@ -420,11 +428,15 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
     }
 
     // Range Estimate below KM/H (280px padding prevents "E" from being clipped)
-    int curRange = (int)roundf(telemetry.est_range_km);
+    int curRange = (telemetry.est_range_km < 0.0f) ? -1 : (int)roundf(telemetry.est_range_km);
     if (curRange != _cache.est_range) {
         _cache.est_range = curRange;
         char rStr[32];
-        snprintf(rStr, sizeof(rStr), "EST RANGE: %d km", curRange);
+        if (curRange < 0) {
+            snprintf(rStr, sizeof(rStr), "EST RANGE: N/A");
+        } else {
+            snprintf(rStr, sizeof(rStr), "EST RANGE: %d km", curRange);
+        }
         _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
         _canvas->setTextPadding(280);
         _canvas->drawCenterString(rStr, 525, 198, &fonts::Font4);
@@ -456,21 +468,29 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
     }
 
     // 7. Right Flank: Battery % and Remaining Wh (Zero-flicker native padding with dynamic color)
-    int curBat = (int)roundf(telemetry.battery_pct);
+    int curBat = (telemetry.battery_pct < 0.0f) ? -1 : (int)roundf(telemetry.battery_pct);
     if (curBat != _cache.battery_pct) {
         _cache.battery_pct = curBat;
-        char numStr[16];
-        snprintf(numStr, sizeof(numStr), "%d", curBat);
-        uint16_t bCol = getBatteryColor(telemetry.battery_pct);
-        drawValWithUnit(660, 74, 85, 45, numStr, "%", bCol, bCol);
+        if (curBat < 0) {
+            drawValWithUnit(660, 74, 85, 45, "N/A", "", COLOR_MUTED_GRAY, COLOR_MUTED_GRAY);
+        } else {
+            char numStr[16];
+            snprintf(numStr, sizeof(numStr), "%d", curBat);
+            uint16_t bCol = getBatteryColor(telemetry.battery_pct);
+            drawValWithUnit(660, 74, 85, 45, numStr, "%", bCol, bCol);
+        }
     }
 
-    int curRemWh = (int)roundf(telemetry.remaining_wh);
+    int curRemWh = (telemetry.remaining_wh < 0.0f) ? -1 : (int)roundf(telemetry.remaining_wh);
     if (curRemWh != _cache.remaining_wh) {
         _cache.remaining_wh = curRemWh;
-        char numStr[16];
-        snprintf(numStr, sizeof(numStr), "%d", curRemWh);
-        drawValWithUnit(660, 172, 115, 50, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
+        if (curRemWh < 0) {
+            drawValWithUnit(660, 172, 115, 50, "N/A", "", COLOR_MUTED_GRAY, COLOR_MUTED_GRAY);
+        } else {
+            char numStr[16];
+            snprintf(numStr, sizeof(numStr), "%d", curRemWh);
+            drawValWithUnit(660, 172, 115, 50, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
+        }
     }
 
     // 8. Bottom Strip: Trip, Clean Thermals, Battery SoH (Positioned at y=282)
@@ -504,6 +524,20 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
     _canvas->setTextPadding(140);
     _canvas->drawRightString(sohStr, 805, 282, &fonts::Font4);
     _canvas->setTextPadding(0);
+
+    // 9. Throttle Input Bar & Percentage Readout
+    drawThrottleBar(450, 235, 150, 16, telemetry.throttle_pct);
+    int curThr = (int)roundf(telemetry.throttle_pct);
+    if (curThr != _cache.throttle_pct) {
+        _cache.throttle_pct = curThr;
+        char thStr[8];
+        snprintf(thStr, sizeof(thStr), "%d%%", curThr);
+        uint16_t thCol = (curThr > 85) ? COLOR_RED : ((curThr > 60) ? COLOR_AMBER : COLOR_CYAN);
+        _canvas->setTextColor(thCol, COLOR_BG);
+        _canvas->setTextPadding(40);
+        _canvas->drawString(thStr, 608, 235, &fonts::Font2);
+        _canvas->setTextPadding(0);
+    }
 }
 
 // ==============================================================================
@@ -549,6 +583,14 @@ void DashboardRenderer::initHorizontalBarStyle(const DashTelemetry &telemetry) {
     // 3. Bottom Divider (Moved down to y=270)
     _canvas->drawFastHLine(20, 270, 780, COLOR_BORDER);
 
+    // 4. Throttle Input Track & Label (Centered at x=410, y=235)
+    _canvas->fillRoundRect(335, 235, 150, 16, 3, COLOR_SURFACE);
+    _canvas->drawRoundRect(335, 235, 150, 16, 3, COLOR_BORDER);
+    _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_BG);
+    _canvas->drawString("THR", 301, 235, &fonts::Font2);
+    _cache.throttle_fill_w = -1;
+    _cache.throttle_pct = -1;
+
     _cache.duty_fill_w = -1;
 }
 
@@ -575,6 +617,29 @@ void DashboardRenderer::drawPreciseDutyBar(int x, int y, int w, int h, float dut
     }
 }
 
+void DashboardRenderer::drawThrottleBar(int x, int y, int w, int h, float pct) {
+    if (pct < 0.0f) pct = 0.0f;
+    if (pct > 100.0f) pct = 100.0f;
+    int target_w = (int)roundf((pct / 100.0f) * (w - 4));
+    if (target_w < 0) target_w = 0;
+    if (target_w > w - 4) target_w = w - 4;
+
+    if (target_w != _cache.throttle_fill_w) {
+        int last_w = (_cache.throttle_fill_w >= 0) ? _cache.throttle_fill_w : 0;
+
+        if (target_w > last_w) {
+            for (int px = last_w; px < target_w; px++) {
+                float p = (float)px / (float)(w - 4);
+                uint16_t col = (p > 0.85f) ? COLOR_RED : ((p > 0.60f) ? COLOR_AMBER : COLOR_CYAN);
+                _canvas->drawFastVLine(x + 2 + px, y + 2, h - 4, col);
+            }
+        } else if (target_w < last_w) {
+            _canvas->fillRect(x + 2 + target_w, y + 2, last_w - target_w, h - 4, COLOR_SURFACE);
+        }
+        _cache.throttle_fill_w = target_w;
+    }
+}
+
 void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry) {
     // 1. Top Duty Cycle Bar (x=20, y=8, w=780, h=18)
     float currentDuty = _is_sweeping ? _sweep_duty : telemetry.duty_cycle_pct;
@@ -592,11 +657,15 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         _canvas->setTextPadding(0);
     }
 
-    int curRange = (int)roundf(telemetry.est_range_km);
+    int curRange = (telemetry.est_range_km < 0.0f) ? -1 : (int)roundf(telemetry.est_range_km);
     if (curRange != _cache.est_range) {
         _cache.est_range = curRange;
         char rStr[32];
-        snprintf(rStr, sizeof(rStr), "EST RANGE: %d km", curRange);
+        if (curRange < 0) {
+            snprintf(rStr, sizeof(rStr), "EST RANGE: N/A");
+        } else {
+            snprintf(rStr, sizeof(rStr), "EST RANGE: %d km", curRange);
+        }
         _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
         _canvas->setTextPadding(280);
         _canvas->drawCenterString(rStr, 410, 198, &fonts::Font4);
@@ -628,21 +697,29 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
     }
 
     // 4. Right Flank: Battery % & Remaining Wh (Zero-flicker native padding with dynamic color)
-    int curBat = (int)roundf(telemetry.battery_pct);
+    int curBat = (telemetry.battery_pct < 0.0f) ? -1 : (int)roundf(telemetry.battery_pct);
     if (curBat != _cache.battery_pct) {
         _cache.battery_pct = curBat;
-        char numStr[16];
-        snprintf(numStr, sizeof(numStr), "%d", curBat);
-        uint16_t bCol = getBatteryColor(telemetry.battery_pct);
-        drawValWithUnit(660, 80, 85, 45, numStr, "%", bCol, bCol);
+        if (curBat < 0) {
+            drawValWithUnit(660, 80, 85, 45, "N/A", "", COLOR_MUTED_GRAY, COLOR_MUTED_GRAY);
+        } else {
+            char numStr[16];
+            snprintf(numStr, sizeof(numStr), "%d", curBat);
+            uint16_t bCol = getBatteryColor(telemetry.battery_pct);
+            drawValWithUnit(660, 80, 85, 45, numStr, "%", bCol, bCol);
+        }
     }
 
-    int curRemWh = (int)roundf(telemetry.remaining_wh);
+    int curRemWh = (telemetry.remaining_wh < 0.0f) ? -1 : (int)roundf(telemetry.remaining_wh);
     if (curRemWh != _cache.remaining_wh) {
         _cache.remaining_wh = curRemWh;
-        char numStr[16];
-        snprintf(numStr, sizeof(numStr), "%d", curRemWh);
-        drawValWithUnit(660, 176, 115, 50, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
+        if (curRemWh < 0) {
+            drawValWithUnit(660, 176, 115, 50, "N/A", "", COLOR_MUTED_GRAY, COLOR_MUTED_GRAY);
+        } else {
+            char numStr[16];
+            snprintf(numStr, sizeof(numStr), "%d", curRemWh);
+            drawValWithUnit(660, 176, 115, 50, numStr, "Wh", COLOR_WHITE, COLOR_LIGHT_GRAY);
+        }
     }
 
     // 5. Bottom Status Strip (Positioned at y=282, utilizing full 320px height)
@@ -696,6 +773,20 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
     _canvas->setTextPadding(85);
     _canvas->drawRightString(sohStr, 800, 282, &fonts::Font4);
     _canvas->setTextPadding(0);
+
+    // 6. Throttle Input Bar & Percentage Readout
+    drawThrottleBar(335, 235, 150, 16, telemetry.throttle_pct);
+    int curThr = (int)roundf(telemetry.throttle_pct);
+    if (curThr != _cache.throttle_pct) {
+        _cache.throttle_pct = curThr;
+        char thStr[8];
+        snprintf(thStr, sizeof(thStr), "%d%%", curThr);
+        uint16_t thCol = (curThr > 85) ? COLOR_RED : ((curThr > 60) ? COLOR_AMBER : COLOR_CYAN);
+        _canvas->setTextColor(thCol, COLOR_BG);
+        _canvas->setTextPadding(40);
+        _canvas->drawString(thStr, 493, 235, &fonts::Font2);
+        _canvas->setTextPadding(0);
+    }
 }
 
 // ==============================================================================
@@ -791,20 +882,28 @@ void DashboardRenderer::renderEnergyStatsScreen(const DashTelemetry &telemetry) 
         _canvas->setTextPadding(0);
     }
 
-    int curRemWh = (int)roundf(telemetry.remaining_wh);
+    int curRemWh = (telemetry.remaining_wh < 0.0f) ? -1 : (int)roundf(telemetry.remaining_wh);
     if (curRemWh != _cache.remaining_wh) {
         _cache.remaining_wh = curRemWh;
-        snprintf(buf, sizeof(buf), "%.0f Wh", telemetry.remaining_wh);
+        if (curRemWh < 0) {
+            snprintf(buf, sizeof(buf), "N/A");
+        } else {
+            snprintf(buf, sizeof(buf), "%.0f Wh", telemetry.remaining_wh);
+        }
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
         _canvas->setTextPadding(140);
         _canvas->drawRightString(buf, 385, 232, &fonts::Font4);
         _canvas->setTextPadding(0);
     }
 
-    int curEstRange = (int)roundf(telemetry.est_range_km);
+    int curEstRange = (telemetry.est_range_km < 0.0f) ? -1 : (int)roundf(telemetry.est_range_km);
     if (curEstRange != _cache.est_range) {
         _cache.est_range = curEstRange;
-        snprintf(buf, sizeof(buf), "%d km", curEstRange);
+        if (curEstRange < 0) {
+            snprintf(buf, sizeof(buf), "N/A");
+        } else {
+            snprintf(buf, sizeof(buf), "%d km", curEstRange);
+        }
         _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
         _canvas->setTextPadding(140);
         _canvas->drawRightString(buf, 385, 262, &fonts::Font4);
@@ -1029,9 +1128,9 @@ static const char *ROOT_CATEGORIES[5] = {
 
 static int getSubItemCount(uint8_t sub_id) {
     switch (sub_id) {
-        case 0: return 5;
+        case 0: return 6;
         case 1: return 2;
-        case 2: return 4;
+        case 2: return 5;
         case 3: return 3;
         case 4: return 3;
         default: return 0;
@@ -1085,6 +1184,12 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                     snprintf(d1, d1_sz, "Throttle filter");
                     snprintf(d2, d2_sz, "Smooth: 0.10s-1.00s");
                     break;
+                case 5:
+                    snprintf(title, title_sz, "Throttle ADC Port");
+                    snprintf(val, val_sz, (s.throttle_adc_channel == 0) ? "ADC1" : "ADC2");
+                    snprintf(d1, d1_sz, "VESC throttle input");
+                    snprintf(d2, d2_sz, "Select ADC1 or ADC2");
+                    break;
             }
             break;
 
@@ -1126,6 +1231,12 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                     snprintf(d2, d2_sz, "500Wh to 2500Wh");
                     break;
                 case 3:
+                    snprintf(title, title_sz, "Pack Voltage Trim");
+                    snprintf(val, val_sz, "%+.1f V", s.voltage_trim_v);
+                    snprintf(d1, d1_sz, "Calibrate pack V");
+                    snprintf(d2, d2_sz, "-2.0V to +2.0V");
+                    break;
+                case 4:
                     snprintf(title, title_sz, "Reset SoH Learning");
                     snprintf(val, val_sz, "RESET LEARNING");
                     snprintf(d1, d1_sz, "Reset capacity learn");
@@ -1214,8 +1325,18 @@ void DashboardRenderer::renderRootMenu() {
 
 void DashboardRenderer::renderSubmenu(uint8_t sub_id, const DashTelemetry &telemetry) {
     int count = getSubItemCount(sub_id);
-    for (int j = 0; j < count; j++) {
-        int iy = 56 + j * 49;
+    int start_idx = 0;
+    if (count > 5) {
+        if (_menu_sub_idx >= 4) {
+            start_idx = _menu_sub_idx - 4;
+            if (start_idx + 5 > count) start_idx = count - 5;
+        }
+    }
+    int display_count = (count > 5) ? 5 : count;
+
+    for (int k = 0; k < display_count; k++) {
+        int j = start_idx + k;
+        int iy = 56 + k * 49;
         bool isSel = (j == _menu_sub_idx);
 
         char title[48], val[32], d1[64], d2[64];
@@ -1394,6 +1515,8 @@ void DashboardRenderer::adjustCurrentSetting(int direction, DashTelemetry &telem
                 if (v < 0.10f) v = 0.10f;
                 if (v > 1.00f) v = 1.00f;
                 s.throttle_ramp_sec = v;
+            } else if (_menu_sub_idx == 5) { // throttle adc channel (0 = ADC1, 1 = ADC2)
+                s.throttle_adc_channel = (s.throttle_adc_channel == 0) ? 1 : 0;
             }
             break;
 
@@ -1426,6 +1549,11 @@ void DashboardRenderer::adjustCurrentSetting(int direction, DashTelemetry &telem
                 if (wh > 2500.0f) wh = 2500.0f;
                 Battery.getProfile(1).nominal_wh = wh;
                 Battery.saveProfiles();
+            } else if (_menu_sub_idx == 3) { // Voltage Trim (-2.0V .. +2.0V)
+                float v = s.voltage_trim_v + (direction * 0.1f);
+                if (v < -2.0f) v = -2.0f;
+                if (v > 2.0f) v = 2.0f;
+                s.voltage_trim_v = v;
             }
             break;
 
@@ -1488,7 +1616,7 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
                 _menu_dirty = true;
             }
         } else if (action == NAV_BOTH_PRESSED || action == NAV_BTN1_LONG) { // SELECT / ENTER
-            if (_menu_root_idx == 2 && _menu_sub_idx == 3) {
+            if (_menu_root_idx == 2 && _menu_sub_idx == 4) {
                 // Reset Learning
                 Battery.resetProfileLearning(Settings.get().active_battery_profile);
                 _menu_dirty = true;

@@ -118,6 +118,15 @@ void BatteryManager::update(DashTelemetry &telemetry, float dt) {
     uint32_t now = millis();
     BatteryProfile &prof = _profiles[_active_profile_id];
 
+    // Check if battery voltage is within a plausible 14S Li-Ion window (41.0V - 62.0V)
+    // When powered by low-voltage Lab PSU (e.g. 22V-28V) or disconnected, suppress battery stats
+    if (telemetry.voltage < 41.0f || telemetry.voltage > 62.0f) {
+        telemetry.battery_pct = -1.0f;
+        telemetry.remaining_wh = -1.0f;
+        telemetry.est_range_km = -1.0f;
+        return;
+    }
+
     // 1. Compute instant power and energy delta
     float power_w = telemetry.voltage * telemetry.current_amps;
     float delta_wh = (power_w * (dt / 3600.0f));

@@ -18,6 +18,11 @@ static uint16_t crc16(const uint8_t *buf, uint32_t len) {
     return crc;
 }
 
+static float _last_adc1_v = 0.0f;
+static float _last_adc1_pct = 0.0f;
+static float _last_adc2_v = 0.0f;
+static float _last_adc2_pct = 0.0f;
+
 VescHandler::VescHandler()
     : _pole_pairs(15),
       _wheel_diameter_mm(660.0f),
@@ -187,10 +192,19 @@ void VescHandler::pollRealVesc(DashTelemetry &telemetry) {
     float dt = (now - last_update_time_ms) / 1000.0f;
     last_update_time_ms = now;
 
-    // Poll VESC at 20 Hz (every 50 ms)
-    if (now - _last_poll_ms >= 50) {
+    // Interleave polling at 25ms interval:
+    // Phase 0: COMM_GET_VALUES (20Hz)
+    // Phase 1: COMM_GET_DECODED_ADC (20Hz)
+    static uint8_t poll_phase = 0;
+    if (now - _last_poll_ms >= 25) {
         _last_poll_ms = now;
-        sendVescGetValues();
+        if (poll_phase == 0) {
+            sendVescGetValues();
+            poll_phase = 1;
+        } else {
+            sendVescGetDecodedAdc();
+            poll_phase = 0;
+        }
     }
 
     // Process incoming packet from UART
@@ -198,8 +212,12 @@ void VescHandler::pollRealVesc(DashTelemetry &telemetry) {
     static size_t rx_index = 0;
     static uint32_t last_rx_byte_ms = 0;
 
+    static uint32_t total_rx_bytes = 0;
+    static uint32_t last_diag_ms = 0;
+
     while (VESC_UART_PORT.available()) {
         uint8_t b = VESC_UART_PORT.read();
+        total_rx_bytes++;
         last_rx_byte_ms = now;
 
         if (rx_index == 0) {
@@ -230,6 +248,18 @@ void VescHandler::pollRealVesc(DashTelemetry &telemetry) {
         telemetry.vesc_connected = false;
     }
 
+    // Diagnostics every 2 seconds
+    if (now - last_diag_ms >= 2000) {
+        last_diag_ms = now;
+        Serial.printf("[VESC_UART] Link: %s | V_in: %.1fV | Thr(ADC%d): %.1f%% [ADC1: %.2fV (%.1f%%) | ADC2: %.2fV (%.1f%%)]\n",
+                      telemetry.vesc_connected ? "CONNECTED" : "NO_DATA",
+                      telemetry.voltage,
+                      Settings.get().throttle_adc_channel + 1,
+                      telemetry.throttle_pct,
+                      _last_adc1_v, _last_adc1_pct,
+                      _last_adc2_v, _last_adc2_pct);
+    }
+
     // Update Battery State
     if (dt > 0.001f && dt < 1.0f) {
         Battery.update(telemetry, dt);
@@ -237,44 +267,116 @@ void VescHandler::pollRealVesc(DashTelemetry &telemetry) {
 }
 
 void VescHandler::sendVescGetValues() {
-    static const uint8_t req[] = { 0x02, 0x01, 0x04, 0x40, 0x84, 0x03 };
+    // Request COMM_GET_VALUES_SETUP (0x2F / 47) which contains mc_interface_get_speed()
+    static const uint8_t req[] = { 0x02, 0x01, 0x2F, 0xD5, 0x8D, 0x03 };
+    VESC_UART_PORT.write(req, sizeof(req));
+}
+
+void VescHandler::sendVescGetDecodedAdc() {
+    static const uint8_t req[] = { 0x02, 0x01, 0x20, 0x24, 0x62, 0x03 };
     VESC_UART_PORT.write(req, sizeof(req));
 }
 
 bool VescHandler::parseVescPacket(uint8_t *buffer, size_t len, DashTelemetry &telemetry) {
-    if (len < 60) return false;
+    if (len < 6) return false;
     uint8_t *payload = &buffer[2];
-
-    if (payload[0] != 0x04) return false; // COMM_GET_VALUES
+    uint8_t cmd_id = payload[0];
 
     uint16_t expected_crc = (buffer[len - 3] << 8) | buffer[len - 2];
     uint16_t calc_crc = crc16(payload, buffer[1]);
-    if (expected_crc != calc_crc) return false;
+    if (expected_crc != calc_crc) {
+        return false;
+    }
 
     telemetry.vesc_connected = true;
+
+    // 1. Decoded ADC Packet (COMM_GET_DECODED_ADC = 0x20 / 32)
+    if (cmd_id == 0x20) {
+        if (len >= 11) {
+            int32_t raw_level1 = (int32_t)(((uint32_t)payload[1] << 24) | ((uint32_t)payload[2] << 16) | ((uint32_t)payload[3] << 8) | (uint32_t)payload[4]);
+            int32_t raw_volt1  = (len >= 15) ? (int32_t)(((uint32_t)payload[5] << 24) | ((uint32_t)payload[6] << 16) | ((uint32_t)payload[7] << 8) | (uint32_t)payload[8]) : 0;
+            int32_t raw_level2 = (len >= 19) ? (int32_t)(((uint32_t)payload[9] << 24) | ((uint32_t)payload[10] << 16) | ((uint32_t)payload[11] << 8) | (uint32_t)payload[12]) : 0;
+            int32_t raw_volt2  = (len >= 22) ? (int32_t)(((uint32_t)payload[13] << 24) | ((uint32_t)payload[14] << 16) | ((uint32_t)payload[15] << 8) | (uint32_t)payload[16]) : 0;
+
+            _last_adc1_v = raw_volt1 / 1000000.0f;
+            _last_adc1_pct = (raw_level1 / 1000000.0f) * 100.0f;
+            _last_adc2_v = raw_volt2 / 1000000.0f;
+            _last_adc2_pct = (raw_level2 / 1000000.0f) * 100.0f;
+
+            int32_t chosen_level = (Settings.get().throttle_adc_channel == 1 && len >= 19) ? raw_level2 : raw_level1;
+            float pct = (chosen_level / 1000000.0f) * 100.0f;
+            if (pct < 0.0f) pct = 0.0f;
+            if (pct > 100.0f) pct = 100.0f;
+            telemetry.throttle_pct = pct;
+        }
+        return true;
+    }
+
+    // 2. Setup Telemetry Packet with True Ground Speed (COMM_GET_VALUES_SETUP = 0x2F / 47)
+    if (cmd_id == 0x2F) {
+        if (len < 50) return false;
+        int idx = 1;
+        int16_t temp_mos = (int16_t)((payload[idx] << 8) | payload[idx + 1]); idx += 2;
+        int16_t temp_mot = (int16_t)((payload[idx] << 8) | payload[idx + 1]); idx += 2;
+        int32_t current_mot = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
+        int32_t current_in  = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
+        int16_t duty_now = (int16_t)((payload[idx] << 8) | payload[idx + 1]); idx += 2;
+        int32_t erpm = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
+        int32_t speed_m_s = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
+        int16_t v_in = (int16_t)((payload[idx] << 8) | payload[idx + 1]); idx += 2;
+        idx += 2; // skip batt_level
+        int32_t ah_used = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
+        idx += 4; // skip ah_charge_tot
+        int32_t wh_used = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
+        idx += 4; // skip wh_charge_tot
+        int32_t dist_m = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
+
+        telemetry.temp_esc       = temp_mos / 10.0f;
+        telemetry.temp_motor     = temp_mot / 10.0f;
+        telemetry.phase_amps     = fabsf(current_mot / 100.0f);
+        telemetry.current_amps   = fabsf(current_in / 100.0f);
+        telemetry.duty_cycle_pct = fabsf((float)duty_now / 10.0f);
+        int pole_pairs = Settings.get().motor_pole_pairs;
+        if (pole_pairs < 2) pole_pairs = 15;
+        telemetry.rpm            = fabsf((float)erpm / (float)pole_pairs);
+        telemetry.voltage        = (v_in / 10.0f) + Settings.get().voltage_trim_v;
+        if (telemetry.voltage < 0.0f) telemetry.voltage = 0.0f;
+        telemetry.power_watts    = telemetry.voltage * telemetry.current_amps;
+        telemetry.amphours_used  = ah_used / 10000.0f;
+
+        // Ground speed from VESC (injected by Port 4 LispBM wheel sensor override)
+        telemetry.speed_kmh      = fabsf((speed_m_s / 1000.0f) * 3.6f);
+        telemetry.trip_km        = fabsf((dist_m / 1000.0f) / 1000.0f);
+        return true;
+    }
+
+    // 3. Fallback: Standard Telemetry Packet (COMM_GET_VALUES = 0x04)
+    if (cmd_id != 0x04) return false;
+    if (len < 60) return false;
 
     // Unpack big-endian payload
     int idx = 1;
     int16_t temp_mos = (int16_t)((payload[idx] << 8) | payload[idx + 1]); idx += 2;
     int16_t temp_mot = (int16_t)((payload[idx] << 8) | payload[idx + 1]); idx += 2;
-    int32_t current_mot = (int32_t)((payload[idx] << 24) | (payload[idx + 1] << 16) | (payload[idx + 2] << 8) | payload[idx + 3]); idx += 4;
-    int32_t current_in  = (int32_t)((payload[idx] << 24) | (payload[idx + 1] << 16) | (payload[idx + 2] << 8) | payload[idx + 3]); idx += 4;
+    int32_t current_mot = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
+    int32_t current_in  = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
     idx += 8; // skip id, iq
     int16_t duty_now = (int16_t)((payload[idx] << 8) | payload[idx + 1]); idx += 2;
-    int32_t erpm = (int32_t)((payload[idx] << 24) | (payload[idx + 1] << 16) | (payload[idx + 2] << 8) | payload[idx + 3]); idx += 4;
+    int32_t erpm = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
     int16_t v_in = (int16_t)((payload[idx] << 8) | payload[idx + 1]); idx += 2;
-    int32_t ah_used = (int32_t)((payload[idx] << 24) | (payload[idx + 1] << 16) | (payload[idx + 2] << 8) | payload[idx + 3]); idx += 4;
+    int32_t ah_used = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
     idx += 4; // skip ah_charged
-    int32_t wh_used = (int32_t)((payload[idx] << 24) | (payload[idx + 1] << 16) | (payload[idx + 2] << 8) | payload[idx + 3]); idx += 4;
+    int32_t wh_used = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
     idx += 4; // skip wh_charged
-    int32_t tachometer = (int32_t)((payload[idx] << 24) | (payload[idx + 1] << 16) | (payload[idx + 2] << 8) | payload[idx + 3]); idx += 4;
+    int32_t tachometer = (int32_t)(((uint32_t)payload[idx] << 24) | ((uint32_t)payload[idx + 1] << 16) | ((uint32_t)payload[idx + 2] << 8) | (uint32_t)payload[idx + 3]); idx += 4;
 
     telemetry.temp_esc       = temp_mos / 10.0f;
     telemetry.temp_motor     = temp_mot / 10.0f;
     telemetry.phase_amps     = fabsf(current_mot / 100.0f);
     telemetry.current_amps   = fabsf(current_in / 100.0f);
     telemetry.duty_cycle_pct = fabsf((float)duty_now / 10.0f);
-    telemetry.voltage        = v_in / 10.0f;
+    telemetry.voltage        = (v_in / 10.0f) + Settings.get().voltage_trim_v;
+    if (telemetry.voltage < 0.0f) telemetry.voltage = 0.0f;
     telemetry.power_watts    = telemetry.voltage * telemetry.current_amps;
     telemetry.amphours_used  = ah_used / 10000.0f;
 
