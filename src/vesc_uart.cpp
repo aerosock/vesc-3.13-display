@@ -18,6 +18,31 @@ static uint16_t crc16(const uint8_t *buf, uint32_t len) {
     return crc;
 }
 
+// Deserializes VESC IEEE-754 auto-float
+static float buffer_get_float32_auto(const uint8_t *buffer, int32_t *index) {
+    uint32_t res = ((uint32_t)buffer[*index] << 24) |
+                   ((uint32_t)buffer[*index + 1] << 16) |
+                   ((uint32_t)buffer[*index + 2] << 8) |
+                   ((uint32_t)buffer[*index + 3]);
+    *index += 4;
+
+    int e = (res >> 23) & 0xFF;
+    uint32_t sig_i = res & 0x7FFFFF;
+    bool neg = (res & (1U << 31)) != 0;
+
+    float sig = 0.0f;
+    if (e != 0 || sig_i != 0) {
+        sig = (float)sig_i / (8388608.0f * 2.0f) + 0.5f;
+        e -= 126;
+    }
+
+    if (neg) {
+        sig = -sig;
+    }
+
+    return ldexpf(sig, e);
+}
+
 static float _last_adc1_v = 0.0f;
 static float _last_adc1_pct = 0.0f;
 static float _last_adc2_v = 0.0f;
@@ -34,7 +59,10 @@ VescHandler::VescHandler()
       _sim_last_update_ms(0),
       _bridge_active(false),
       _bridge_pc_to_vesc(0),
-      _bridge_vesc_to_pc(0) {}
+      _bridge_vesc_to_pc(0),
+      _sync_status(SYNC_IDLE),
+      _mcconf_req_ms(0),
+      _sync_ms(0) {}
 
 void VescHandler::begin() {
     VESC_UART_PORT.setRxBufferSize(2048);
@@ -213,7 +241,7 @@ void VescHandler::pollRealVesc(DashTelemetry &telemetry) {
     }
 
     // Process incoming packet from UART
-    static uint8_t rx_buffer[256];
+    static uint8_t rx_buffer[1024];
     static size_t rx_index = 0;
     static uint32_t last_rx_byte_ms = 0;
 
@@ -232,9 +260,21 @@ void VescHandler::pollRealVesc(DashTelemetry &telemetry) {
         } else {
             if (rx_index < sizeof(rx_buffer)) {
                 rx_buffer[rx_index++] = b;
+
+                // Short packet (header 0x02, payload <= 256)
                 if (rx_buffer[0] == 0x02 && rx_index >= 4) {
                     uint8_t payload_len = rx_buffer[1];
                     if (rx_index == (size_t)(payload_len + 5)) {
+                        if (rx_buffer[rx_index - 1] == 0x03) {
+                            parseVescPacket(rx_buffer, rx_index, telemetry);
+                        }
+                        rx_index = 0;
+                    }
+                }
+                // Long packet (header 0x03, payload > 256, e.g. COMM_GET_MCCONF)
+                else if (rx_buffer[0] == 0x03 && rx_index >= 5) {
+                    uint16_t payload_len = ((uint16_t)rx_buffer[1] << 8) | rx_buffer[2];
+                    if (rx_index == (size_t)(payload_len + 6)) {
                         if (rx_buffer[rx_index - 1] == 0x03) {
                             parseVescPacket(rx_buffer, rx_index, telemetry);
                         }
@@ -248,9 +288,16 @@ void VescHandler::pollRealVesc(DashTelemetry &telemetry) {
     }
 
     // Timeout reset
-    if (rx_index > 0 && (now - last_rx_byte_ms > 120)) {
+    if (rx_index > 0 && (now - last_rx_byte_ms > 150)) {
         rx_index = 0;
         telemetry.vesc_connected = false;
+    }
+
+    // Check on-demand MCCONF pull timeout
+    if (_sync_status == SYNC_REQUESTED && (now - _mcconf_req_ms > 2500)) {
+        _sync_status = SYNC_FAILED;
+        _sync_ms = now;
+        Serial.println("[VESC_UART] COMM_GET_MCCONF request timed out (VESC off or disconnected).");
     }
 
     // Diagnostics every 2 seconds
@@ -284,16 +331,28 @@ void VescHandler::sendVescGetDecodedAdc() {
 
 bool VescHandler::parseVescPacket(uint8_t *buffer, size_t len, DashTelemetry &telemetry) {
     if (len < 6) return false;
-    uint8_t *payload = &buffer[2];
-    uint8_t cmd_id = payload[0];
 
-    uint16_t expected_crc = (buffer[len - 3] << 8) | buffer[len - 2];
-    uint16_t calc_crc = crc16(payload, buffer[1]);
+    uint8_t *payload;
+    size_t payload_len;
+
+    if (buffer[0] == 0x02) {
+        payload = &buffer[2];
+        payload_len = buffer[1];
+    } else if (buffer[0] == 0x03) {
+        payload = &buffer[3];
+        payload_len = ((size_t)buffer[1] << 8) | buffer[2];
+    } else {
+        return false;
+    }
+
+    uint16_t expected_crc = ((uint16_t)buffer[len - 3] << 8) | buffer[len - 2];
+    uint16_t calc_crc = crc16(payload, payload_len);
     if (expected_crc != calc_crc) {
         return false;
     }
 
     telemetry.vesc_connected = true;
+    uint8_t cmd_id = payload[0];
 
     // 1. Decoded ADC Packet (COMM_GET_DECODED_ADC = 0x20 / 32)
     if (cmd_id == 0x20) {
@@ -401,7 +460,48 @@ bool VescHandler::parseVescPacket(uint8_t *buffer, size_t len, DashTelemetry &te
     float revs = (float)tachometer / ((float)pole_pairs * 6.0f);
     telemetry.trip_km = fabsf((revs * wheel_circ_m) / (gear_ratio * 1000.0f));
 
+    // 4. Motor Configuration Packet (COMM_GET_MCCONF = 0x0E / 14)
+    if (cmd_id == 0x0E) {
+        if (payload_len >= 25) {
+            int32_t ind = 5; // skip cmd_id (1) and MCCONF_SIGNATURE (4)
+            ind += 4;        // skip pwm_mode, comm_mode, motor_type, sensor_mode
+            float l_current_max    = buffer_get_float32_auto(payload, &ind);
+            float l_current_min    = buffer_get_float32_auto(payload, &ind);
+            float l_in_current_max = buffer_get_float32_auto(payload, &ind);
+            float l_in_current_min = buffer_get_float32_auto(payload, &ind);
+
+            if (l_current_max > 5.0f && l_current_max < 200.0f &&
+                l_in_current_max > 5.0f && l_in_current_max < 150.0f) {
+                
+                DashSettings &s = Settings.get();
+                s.max_phase_amps   = (uint8_t)roundf(fabsf(l_current_max));
+                s.max_battery_amps = (uint8_t)roundf(fabsf(l_in_current_max));
+                Settings.save();
+
+                _sync_status = SYNC_SUCCESS;
+                _sync_ms = millis();
+                Serial.printf("[VESC_UART] Pulled MCCONF successfully: Phase=%dA, Bat=%dA (saved to flash)\n",
+                              s.max_phase_amps, s.max_battery_amps);
+            } else {
+                _sync_status = SYNC_FAILED;
+                _sync_ms = millis();
+            }
+        } else {
+            _sync_status = SYNC_FAILED;
+            _sync_ms = millis();
+        }
+        return true;
+    }
+
     return true;
+}
+
+void VescHandler::requestMcconf() {
+    static const uint8_t req[] = { 0x02, 0x01, 0x0E, 0xE1, 0xCE, 0x03 };
+    VESC_UART_PORT.write(req, sizeof(req));
+    _sync_status = SYNC_REQUESTED;
+    _mcconf_req_ms = millis();
+    Serial.println("[VESC_UART] Sent COMM_GET_MCCONF request to VESC.");
 }
 
 // ==============================================================================

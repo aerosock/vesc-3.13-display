@@ -9,8 +9,8 @@ SettingsManager::SettingsManager() {
 void SettingsManager::loadDefaults() {
     _settings.dash_style             = STYLE_ANALOG_DIAL;
     _settings.brightness_pct         = 90;
-    _settings.max_battery_amps       = 28;
-    _settings.max_phase_amps         = 55;
+    _settings.max_battery_amps       = 25;
+    _settings.max_phase_amps         = 45;
     _settings.field_weak_amps        = 10;
     _settings.max_speed_kmh          = 0; // Unlimited
     _settings.throttle_ramp_sec      = 0.2f;

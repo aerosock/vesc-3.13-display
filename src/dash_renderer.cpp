@@ -1125,7 +1125,7 @@ static int getSubItemCount(uint8_t sub_id) {
         case 1: return 2;
         case 2: return 5;
         case 3: return 3;
-        case 4: return 4;
+        case 4: return 5;
         default: return 0;
     }
 }
@@ -1264,10 +1264,18 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
         case 4: // SYSTEM & DIAGNOSTICS
             switch (item_id) {
                 case 0:
-                    snprintf(title, title_sz, "Reset Trip Statistics");
-                    snprintf(val, val_sz, "RESET TRIP STATS");
-                    snprintf(d1, d1_sz, "Clear trip distance");
-                    snprintf(d2, d2_sz, "Press [1+2] to clear");
+                    snprintf(title, title_sz, "Sync VESC Settings");
+                    if (Vesc.getSyncStatus() == SYNC_REQUESTED) {
+                        snprintf(val, val_sz, "PULLING...");
+                    } else if (Vesc.getSyncStatus() == SYNC_SUCCESS) {
+                        snprintf(val, val_sz, "SYNC OK!");
+                    } else if (Vesc.getSyncStatus() == SYNC_FAILED) {
+                        snprintf(val, val_sz, "FAILED");
+                    } else {
+                        snprintf(val, val_sz, "PULL FROM VESC");
+                    }
+                    snprintf(d1, d1_sz, "Read VESC motor limits");
+                    snprintf(d2, d2_sz, "Saves to flash memory");
                     break;
                 case 1:
                     snprintf(title, title_sz, "VESC USB Bridge");
@@ -1276,12 +1284,18 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                     snprintf(d2, d2_sz, "Press [1+2] to start");
                     break;
                 case 2:
+                    snprintf(title, title_sz, "Reset Trip Statistics");
+                    snprintf(val, val_sz, "RESET TRIP STATS");
+                    snprintf(d1, d1_sz, "Clear trip distance");
+                    snprintf(d2, d2_sz, "Press [1+2] to clear");
+                    break;
+                case 3:
                     snprintf(title, title_sz, "Factory Reset");
                     snprintf(val, val_sz, "RESTORE DEFAULTS");
                     snprintf(d1, d1_sz, "Restore defaults");
                     snprintf(d2, d2_sz, "Press [1+2] to reset");
                     break;
-                case 3:
+                case 4:
                     snprintf(title, title_sz, "VESC Hardware Link");
                     snprintf(val, val_sz, telemetry.vesc_connected ? "COMM HEALTHY" : "OFFLINE");
                     snprintf(d1, d1_sz, "Flipsky 75100 V1");
@@ -1364,6 +1378,18 @@ void DashboardRenderer::renderSettingsScreen(const DashTelemetry &telemetry) {
         _menu_dirty = true;
     }
 
+    // Check VESC Sync status transitions to refresh display
+    VescSyncStatus cur_sync = Vesc.getSyncStatus();
+    static VescSyncStatus last_sync_status = SYNC_IDLE;
+    if (cur_sync != last_sync_status) {
+        last_sync_status = cur_sync;
+        _menu_dirty = true;
+    }
+    if (cur_sync != SYNC_IDLE && cur_sync != SYNC_REQUESTED && (millis() - Vesc.getSyncTimeMs() > 4000)) {
+        Vesc.resetSyncStatus();
+        _menu_dirty = true;
+    }
+
     if (!_menu_dirty) return;
     _menu_dirty = false;
 
@@ -1427,14 +1453,33 @@ void DashboardRenderer::renderSettingsScreen(const DashTelemetry &telemetry) {
         }
 
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-        _canvas->drawString(d1, 365, 120, &fonts::Font4);
+        _canvas->drawString(d1, 365, 114, &fonts::Font4);
 
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-        _canvas->drawString(d2, 365, 154, &fonts::Font4);
+        _canvas->drawString(d2, 365, 144, &fonts::Font4);
+
+        // Live VESC Sync Banner if active
+        if (cur_sync == SYNC_REQUESTED) {
+            _canvas->fillRoundRect(365, 174, 415, 26, 4, 0x2940);
+            _canvas->setTextColor(COLOR_AMBER, 0x2940);
+            _canvas->drawCenterString("PULLING VESC CONFIG...", 365 + 415/2, 178, &fonts::Font4);
+        } else if (cur_sync == SYNC_SUCCESS) {
+            _canvas->fillRoundRect(365, 174, 415, 26, 4, 0x0A42);
+            _canvas->setTextColor(COLOR_GREEN, 0x0A42);
+            char okBuf[48];
+            snprintf(okBuf, sizeof(okBuf), "SYNC OK: Bat %dA | Phase %dA", s.max_battery_amps, s.max_phase_amps);
+            _canvas->drawCenterString(okBuf, 365 + 415/2, 178, &fonts::Font4);
+        } else if (cur_sync == SYNC_FAILED) {
+            _canvas->fillRoundRect(365, 174, 415, 26, 4, 0x3000);
+            _canvas->setTextColor(COLOR_RED, 0x3000);
+            _canvas->drawCenterString("SYNC FAILED: NO VESC LINK", 365 + 415/2, 178, &fonts::Font4);
+        }
 
         // Hints strictly under 21 characters:
         _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
-        _canvas->drawString("[1+2] Enter Submenu", 365, 230, &fonts::Font4);
+        _canvas->drawString("[1+2] Enter Submenu", 365, 212, &fonts::Font4);
+        _canvas->setTextColor(COLOR_AMBER, COLOR_SURFACE);
+        _canvas->drawString("Hold [1] Pull VESC", 365, 240, &fonts::Font4);
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
         _canvas->drawString("Hold [2] Exit to Dash", 365, 268, &fonts::Font4);
     } else {
@@ -1483,7 +1528,19 @@ void DashboardRenderer::renderSettingsScreen(const DashTelemetry &telemetry) {
             _canvas->drawString("[1+2] Save & Exit", 365, 268, &fonts::Font4);
         } else {
             _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
-            _canvas->drawString("[1+2] Edit Setting", 365, 240, &fonts::Font4);
+            if (_menu_root_idx == 4 && _menu_sub_idx == 0) {
+                _canvas->drawString("[1+2] Pull From VESC", 365, 240, &fonts::Font4);
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 1) {
+                _canvas->drawString("[1+2] Start Bridge", 365, 240, &fonts::Font4);
+            } else if (_menu_root_idx == 4 && _menu_sub_idx >= 2 && _menu_sub_idx <= 3) {
+                _canvas->drawString("[1+2] Confirm Reset", 365, 240, &fonts::Font4);
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 4) {
+                _canvas->drawString("Info Only", 365, 240, &fonts::Font4);
+            } else if (_menu_root_idx == 2 && _menu_sub_idx == 4) {
+                _canvas->drawString("[1+2] Confirm Reset", 365, 240, &fonts::Font4);
+            } else {
+                _canvas->drawString("[1+2] Edit Setting", 365, 240, &fonts::Font4);
+            }
             _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
             _canvas->drawString("Hold [2] Back to Menu", 365, 268, &fonts::Font4);
         }
@@ -1647,9 +1704,8 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
                 Battery.resetProfileLearning(Settings.get().active_battery_profile);
                 _menu_dirty = true;
             } else if (_menu_root_idx == 4 && _menu_sub_idx == 0) {
-                // Reset Trip Stats
-                telemetry.trip_km = 0.0f;
-                telemetry.stats.reset();
+                // Sync VESC Settings
+                Vesc.requestMcconf();
                 _menu_dirty = true;
             } else if (_menu_root_idx == 4 && _menu_sub_idx == 1) {
                 // Start VESC USB Bridge
@@ -1661,11 +1717,16 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
                 _screen_dirty = true;
                 _cache.invalidate();
             } else if (_menu_root_idx == 4 && _menu_sub_idx == 2) {
+                // Reset Trip Stats
+                telemetry.trip_km = 0.0f;
+                telemetry.stats.reset();
+                _menu_dirty = true;
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 3) {
                 // Restore Factory Defaults
                 Settings.resetToDefaults();
                 _display->setBrightness(map(Settings.get().brightness_pct, 0, 100, 0, 255));
                 _menu_dirty = true;
-            } else if (_menu_root_idx == 4 && _menu_sub_idx == 3) {
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 4) {
                 // VESC Status is info-only
             } else {
                 _menu_edit_mode = true;
@@ -1685,7 +1746,10 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
         } else if (action == NAV_BTN2_SHORT) { // Cursor DOWN
             _menu_root_idx = (_menu_root_idx + 1) % 5;
             _menu_dirty = true;
-        } else if (action == NAV_BOTH_PRESSED || action == NAV_BTN1_LONG) { // ENTER SUBMENU
+        } else if (action == NAV_BTN1_LONG) { // HOLD BTN1: PULL VESC CONFIG FROM UPPER LEVEL
+            Vesc.requestMcconf();
+            _menu_dirty = true;
+        } else if (action == NAV_BOTH_PRESSED) { // ENTER SUBMENU
             _menu_in_sub = true;
             _menu_sub_idx = 0;
             _menu_dirty = true;

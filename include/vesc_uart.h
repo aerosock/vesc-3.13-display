@@ -4,6 +4,13 @@
 #include "board_config.h"
 #include "dash_types.h"
 
+enum VescSyncStatus {
+    SYNC_IDLE = 0,
+    SYNC_REQUESTED,
+    SYNC_SUCCESS,
+    SYNC_FAILED
+};
+
 class VescHandler {
 public:
     VescHandler();
@@ -26,6 +33,12 @@ public:
     void updateBridge();
     uint32_t getBridgePcToVescBytes() const { return _bridge_pc_to_vesc; }
     uint32_t getBridgeVescToPcBytes() const { return _bridge_vesc_to_pc; }
+
+    // On-Demand Settings Pull from VESC Controller
+    void requestMcconf();
+    VescSyncStatus getSyncStatus() const { return _sync_status; }
+    uint32_t getSyncTimeMs() const { return _sync_ms; }
+    void resetSyncStatus() { _sync_status = SYNC_IDLE; }
 
 private:
     void runSimulation(DashTelemetry &telemetry);
@@ -50,6 +63,11 @@ private:
     bool     _bridge_active;
     uint32_t _bridge_pc_to_vesc;
     uint32_t _bridge_vesc_to_pc;
+
+    // Configuration Pull State
+    VescSyncStatus _sync_status;
+    uint32_t       _mcconf_req_ms;
+    uint32_t       _sync_ms;
 };
 
 extern VescHandler Vesc;
