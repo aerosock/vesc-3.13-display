@@ -342,11 +342,11 @@ void DashboardRenderer::drawAnalogNeedle(int cx, int cy, int length, float angle
     float cos_p = cosf(perp);
     float sin_p = sinf(perp);
 
-    // Needle starts tucked under the hub rim at r=34 with half-width 2.5px
-    int b1X = cx + (int)roundf(cos_a * 34.0f + cos_p * 2.5f);
-    int b1Y = cy + (int)roundf(sin_a * 34.0f + sin_p * 2.5f);
-    int b2X = cx + (int)roundf(cos_a * 34.0f - cos_p * 2.5f);
-    int b2Y = cy + (int)roundf(sin_a * 34.0f - sin_p * 2.5f);
+    // Needle starts under the hub cap at r=26 with half-width 3.0px
+    int b1X = cx + (int)roundf(cos_a * 26.0f + cos_p * 3.0f);
+    int b1Y = cy + (int)roundf(sin_a * 26.0f + sin_p * 3.0f);
+    int b2X = cx + (int)roundf(cos_a * 26.0f - cos_p * 3.0f);
+    int b2Y = cy + (int)roundf(sin_a * 26.0f - sin_p * 3.0f);
     int tipX = cx + (int)roundf(cos_a * (float)length);
     int tipY = cy + (int)roundf(sin_a * (float)length);
 
@@ -367,14 +367,14 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
     if (currentDuty < 0.0f) currentDuty = 0.0f;
     if (currentDuty > 120.0f) currentDuty = 120.0f;
 
-    // 1. Only redraw needle when duty angle actually changes (eliminates tearing ripples and DMA flicker!)
+    // 1. Only redraw needle and hub cap when duty angle actually changes
     static float last_rendered_duty = -999.0f;
     bool duty_changed = !_last_needle.valid || (fabsf(currentDuty - last_rendered_duty) >= 0.25f);
 
     if (duty_changed) {
         last_rendered_duty = currentDuty;
 
-        // Erase previous needle (strictly confined in black band 34 <= r <= 120, never touches scale numbers)
+        // Erase previous needle (strictly confined in band 26 <= r <= 120, never touches scale numbers)
         if (_last_needle.valid) {
             _canvas->fillTriangle(_last_needle.tipX, _last_needle.tipY,
                                   _last_needle.b1X, _last_needle.b1Y,
@@ -388,21 +388,16 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         // Draw needle: Angle +63° (bottom 0%) to -63° (top 120% FW), length=120 stays safely inside scale numbers
         float frac = currentDuty / 120.0f;
         float needle_angle = 1.10f - (frac * 2.20f);
-
         drawAnalogNeedle(cx, cy, 120, needle_angle, COLOR_NEEDLE);
 
-        // Restore clean circular hub rim over needle base (eliminates black notches & red rim artifacts!)
+        // Solid Hub Cap covers the needle pivot completely (Guarantees zero red bleed inside circle!)
+        _canvas->fillCircle(cx, cy, 38, COLOR_SURFACE);
         _canvas->drawCircle(cx, cy, 38, COLOR_BORDER);
         _canvas->drawCircle(cx, cy, 37, COLOR_BORDER);
-        _canvas->drawCircle(cx, cy, 36, COLOR_SURFACE);
-        _canvas->drawCircle(cx, cy, 35, COLOR_SURFACE);
-        _canvas->drawCircle(cx, cy, 34, COLOR_SURFACE);
-    }
+        _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_SURFACE);
+        _canvas->drawCenterString("DUTY", cx, cy - 18, &fonts::Font2);
 
-    // 2. Digital Duty Readout inside Central Hub (Native text padding updates text only when integer changes)
-    int duty_int = (int)roundf(currentDuty);
-    if (duty_int != _cache.duty_x10) {
-        _cache.duty_x10 = duty_int;
+        int duty_int = (int)roundf(currentDuty);
         char dutyBuf[16];
         snprintf(dutyBuf, sizeof(dutyBuf), "%d%%", duty_int);
         uint16_t dCol = getDutyColor(currentDuty);
@@ -410,6 +405,7 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         _canvas->setTextPadding(58);
         _canvas->drawCenterString(dutyBuf, cx, cy - 2, &fonts::Font4);
         _canvas->setTextPadding(0);
+        _cache.duty_x10 = duty_int;
     }
 
     // 4. Top Ribbon

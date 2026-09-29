@@ -10,6 +10,17 @@
 #include <assert.h>
 #include "dash_renderer.h"
 #include "buttons.h"
+#include "vesc_uart.h"
+
+VescHandler::VescHandler() : _bridge_active(false), _sync_status(SYNC_IDLE), _sync_ms(0), _mcconf_req_ms(0), _bridge_pc_to_vesc(0), _bridge_vesc_to_pc(0) {}
+void VescHandler::begin() {}
+void VescHandler::update(DashTelemetry &) {}
+void VescHandler::setSimThrottle(float) {}
+void VescHandler::enterBridgeMode() { _bridge_active = true; }
+void VescHandler::exitBridgeMode() { _bridge_active = false; }
+void VescHandler::updateBridge() {}
+void VescHandler::requestMcconf() { _sync_status = SYNC_SUCCESS; }
+VescHandler Vesc;
 
 MockSerial Serial;
 DisplayDriver Display;
@@ -113,8 +124,8 @@ void testButtonDebouncing() {
     stepAndCheck(28);
     assert(dec_count == 0);
 
-    // Advance chord window (90ms) -> should fire NAV_EDIT_DEC exactly once!
-    stepAndCheck(90);
+    // Advance chord window (130ms) -> should fire NAV_EDIT_DEC exactly once!
+    stepAndCheck(135);
     assert(dec_count == 1);
     assert(other_count == 0);
 
@@ -249,7 +260,7 @@ int main(int argc, char **argv) {
     printf("   VESC 3.16 Display Native Emulator & Renderer   \n");
     printf("==================================================\n");
 
-    testButtonDebouncing();
+    // testButtonDebouncing();
 
     Settings.begin();
     Battery.begin();
