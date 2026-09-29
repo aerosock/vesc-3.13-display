@@ -342,11 +342,12 @@ void DashboardRenderer::drawAnalogNeedle(int cx, int cy, int length, float angle
     float cos_p = cosf(perp);
     float sin_p = sinf(perp);
 
-    // Needle starts under the hub cap (r=26) with 6px base width, tapering to sharp tip at length
-    int b1X = cx + (int)roundf(cos_a * 26.0f + cos_p * 3.0f);
-    int b1Y = cy + (int)roundf(sin_a * 26.0f + sin_p * 3.0f);
-    int b2X = cx + (int)roundf(cos_a * 26.0f - cos_p * 3.0f);
-    int b2Y = cy + (int)roundf(sin_a * 26.0f - sin_p * 3.0f);
+    // Needle starts at outer rim of hub circle (r=39, 1px outside r=38 border) with half-width 2.5px
+    // Chord midpoint sqrt(39^2 - 2.5^2) = 38.92px > 38.0px (100% outside hub!)
+    int b1X = cx + (int)roundf(cos_a * 39.0f + cos_p * 2.5f);
+    int b1Y = cy + (int)roundf(sin_a * 39.0f + sin_p * 2.5f);
+    int b2X = cx + (int)roundf(cos_a * 39.0f - cos_p * 2.5f);
+    int b2Y = cy + (int)roundf(sin_a * 39.0f - sin_p * 2.5f);
     int tipX = cx + (int)roundf(cos_a * (float)length);
     int tipY = cy + (int)roundf(sin_a * (float)length);
 
@@ -367,38 +368,43 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
     if (currentDuty < 0.0f) currentDuty = 0.0f;
     if (currentDuty > 120.0f) currentDuty = 120.0f;
 
-    // 1. Erase Previous Needle (Clean differential triangle erase with full perimeter cleanup)
-    if (_last_needle.valid) {
-        _canvas->fillTriangle(_last_needle.tipX, _last_needle.tipY,
-                              _last_needle.b1X, _last_needle.b1Y,
-                              _last_needle.b2X, _last_needle.b2Y,
-                              COLOR_BG);
-        _canvas->drawLine(_last_needle.b1X, _last_needle.b1Y, _last_needle.tipX, _last_needle.tipY, COLOR_BG);
-        _canvas->drawLine(_last_needle.b2X, _last_needle.b2Y, _last_needle.tipX, _last_needle.tipY, COLOR_BG);
-        _canvas->drawLine(_last_needle.b1X, _last_needle.b1Y, _last_needle.b2X, _last_needle.b2Y, COLOR_BG);
+    // 1. Only redraw needle when duty angle actually changes (eliminates tearing ripples and DMA flicker!)
+    static float last_rendered_duty = -999.0f;
+    bool duty_changed = !_last_needle.valid || (fabsf(currentDuty - last_rendered_duty) >= 0.25f);
+
+    if (duty_changed) {
+        last_rendered_duty = currentDuty;
+
+        // Erase previous needle (strictly confined in black band 39 <= r <= 120, never touches hub or numbers)
+        if (_last_needle.valid) {
+            _canvas->fillTriangle(_last_needle.tipX, _last_needle.tipY,
+                                  _last_needle.b1X, _last_needle.b1Y,
+                                  _last_needle.b2X, _last_needle.b2Y,
+                                  COLOR_BG);
+            _canvas->drawLine(_last_needle.b1X, _last_needle.b1Y, _last_needle.tipX, _last_needle.tipY, COLOR_BG);
+            _canvas->drawLine(_last_needle.b2X, _last_needle.b2Y, _last_needle.tipX, _last_needle.tipY, COLOR_BG);
+            _canvas->drawLine(_last_needle.b1X, _last_needle.b1Y, _last_needle.b2X, _last_needle.b2Y, COLOR_BG);
+        }
+
+        // Draw needle: Angle +63° (bottom 0%) to -63° (top 120% FW), length=120 stays safely inside scale numbers
+        float frac = currentDuty / 120.0f;
+        float needle_angle = 1.10f - (frac * 2.20f);
+
+        drawAnalogNeedle(cx, cy, 120, needle_angle, COLOR_NEEDLE);
     }
 
-    // 2. Draw Needle: Angle +63° (bottom 0%) to -63° (top 120% FW), length=120 stays safely inside scale numbers
-    float frac = currentDuty / 120.0f;
-    float needle_angle = 1.10f - (frac * 2.20f);
-
-    drawAnalogNeedle(cx, cy, 120, needle_angle, COLOR_NEEDLE);
-
-    // 3. Central Hub Cap & Digital Readout (Redrawn over needle pivot: eliminates all rim artifacts and seams)
-    _canvas->fillCircle(cx, cy, 38, COLOR_SURFACE);
-    _canvas->drawCircle(cx, cy, 38, COLOR_BORDER);
-    _canvas->drawCircle(cx, cy, 37, COLOR_BORDER);
-    _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_SURFACE);
-    _canvas->drawCenterString("DUTY", cx, cy - 18, &fonts::Font2);
-
+    // 2. Digital Duty Readout inside Central Hub (Native text padding updates text only when integer changes)
     int duty_int = (int)roundf(currentDuty);
-    char dutyBuf[16];
-    snprintf(dutyBuf, sizeof(dutyBuf), "%d%%", duty_int);
-    uint16_t dCol = getDutyColor(currentDuty);
-    _canvas->setTextColor(dCol, COLOR_SURFACE);
-    _canvas->setTextPadding(58);
-    _canvas->drawCenterString(dutyBuf, cx, cy - 2, &fonts::Font4);
-    _canvas->setTextPadding(0);
+    if (duty_int != _cache.duty_x10) {
+        _cache.duty_x10 = duty_int;
+        char dutyBuf[16];
+        snprintf(dutyBuf, sizeof(dutyBuf), "%d%%", duty_int);
+        uint16_t dCol = getDutyColor(currentDuty);
+        _canvas->setTextColor(dCol, COLOR_SURFACE);
+        _canvas->setTextPadding(58);
+        _canvas->drawCenterString(dutyBuf, cx, cy - 2, &fonts::Font4);
+        _canvas->setTextPadding(0);
+    }
 
     // 4. Top Ribbon
     if (telemetry.battery_profile_id != _cache.batt_prof) {
