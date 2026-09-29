@@ -16,6 +16,8 @@ struct DashSettings {
     uint8_t motor_pole_pairs;    // 8 to 24 (default 15)
     float   gear_ratio;          // 1.0 to 4.0 (default 1.0)
     uint8_t active_battery_profile; // 0 = Profile 1, 1 = Profile 2
+    float   voltage_trim_v;         // -2.0 to +2.0 V (default -0.3V)
+    uint8_t throttle_adc_channel;   // 0 = ADC1, 1 = ADC2 (default 1 = ADC2)
 };
 
 class SettingsManager {

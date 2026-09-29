@@ -74,9 +74,9 @@
 // Onboard PH1.0 4-PIN UART Header:
 // TX (ESP32-S3 TXD) -> GPIO 43  ==> Connects to Flipsky RX
 // RX (ESP32-S3 RXD) -> GPIO 44  ==> Connects to Flipsky TX
-#define VESC_UART_PORT      Serial1
-#define VESC_UART_TX_PIN    43
-#define VESC_UART_RX_PIN    44
+#define VESC_UART_PORT      Serial0
+#define VESC_UART_TX_PIN    44
+#define VESC_UART_RX_PIN    43
 #define VESC_UART_BAUDRATE  115200
 
 // Battery Analog Sensing (onboard divider if used)
@@ -87,4 +87,4 @@
 // ==============================================================================
 // 1 = Self-running simulation mode (test without VESC connected)
 // 0 = Live VESC UART communication with Flipsky 75100
-#define SIMULATION_MODE     1
+#define SIMULATION_MODE     0

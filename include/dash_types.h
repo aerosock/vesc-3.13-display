@@ -8,6 +8,7 @@ enum DashboardScreen {
     SCREEN_ENERGY_STATS  = 1,  // Energy & Battery Analytics Dashboard
     SCREEN_PERF_STATS    = 2,  // Power, Speed & Dynamics Analytics Dashboard
     SCREEN_SETTINGS_MENU = 3,  // Interactive Settings & Diagnostics Menu
+    SCREEN_VESC_BRIDGE   = 4,  // Transparent USB CDC <-> UART Bridge for VESC Tool
     SCREEN_COUNT
 };
 

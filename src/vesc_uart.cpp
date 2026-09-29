@@ -31,9 +31,14 @@ VescHandler::VescHandler()
       _target_speed(0.0f),
       _target_rpm(0.0f),
       _last_poll_ms(0),
-      _sim_last_update_ms(0) {}
+      _sim_last_update_ms(0),
+      _bridge_active(false),
+      _bridge_pc_to_vesc(0),
+      _bridge_vesc_to_pc(0) {}
 
 void VescHandler::begin() {
+    VESC_UART_PORT.setRxBufferSize(2048);
+    VESC_UART_PORT.setTxBufferSize(2048);
     VESC_UART_PORT.begin(VESC_UART_BAUDRATE, SERIAL_8N1, VESC_UART_RX_PIN, VESC_UART_TX_PIN);
     _sim_last_update_ms = millis();
     _last_poll_ms = millis();
@@ -398,3 +403,49 @@ bool VescHandler::parseVescPacket(uint8_t *buffer, size_t len, DashTelemetry &te
 
     return true;
 }
+
+// ==============================================================================
+// Transparent USB CDC <-> UART Passthrough Bridge for VESC Tool
+// ==============================================================================
+void VescHandler::enterBridgeMode() {
+    _bridge_active = true;
+    _bridge_pc_to_vesc = 0;
+    _bridge_vesc_to_pc = 0;
+    // Flush both buffers so no stale telemetry or partial packets remain
+    while (Serial.available()) Serial.read();
+    while (VESC_UART_PORT.available()) VESC_UART_PORT.read();
+}
+
+void VescHandler::exitBridgeMode() {
+    _bridge_active = false;
+    _last_poll_ms = millis();
+}
+
+void VescHandler::updateBridge() {
+    if (!_bridge_active) return;
+
+    // 1. Forward USB CDC (PC / VESC Tool) -> Flipsky 75100 VESC UART
+    int avail_usb = Serial.available();
+    if (avail_usb > 0) {
+        uint8_t buf[256];
+        int to_read = (avail_usb > (int)sizeof(buf)) ? (int)sizeof(buf) : avail_usb;
+        for (int i = 0; i < to_read; i++) {
+            buf[i] = (uint8_t)Serial.read();
+        }
+        VESC_UART_PORT.write(buf, to_read);
+        _bridge_pc_to_vesc += to_read;
+    }
+
+    // 2. Forward Flipsky 75100 VESC UART -> USB CDC (PC / VESC Tool)
+    int avail_uart = VESC_UART_PORT.available();
+    if (avail_uart > 0) {
+        uint8_t buf[256];
+        int to_read = (avail_uart > (int)sizeof(buf)) ? (int)sizeof(buf) : avail_uart;
+        for (int i = 0; i < to_read; i++) {
+            buf[i] = (uint8_t)VESC_UART_PORT.read();
+        }
+        Serial.write(buf, to_read);
+        _bridge_vesc_to_pc += to_read;
+    }
+}
+

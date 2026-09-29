@@ -19,10 +19,19 @@ public:
     void setWheelDiameterMm(float mm) { _wheel_diameter_mm = mm; }
     void setGearRatio(float ratio) { _gear_ratio = ratio; }
 
+    // Transparent USB CDC <-> UART Bridge for VESC Tool
+    void enterBridgeMode();
+    void exitBridgeMode();
+    bool isBridgeActive() const { return _bridge_active; }
+    void updateBridge();
+    uint32_t getBridgePcToVescBytes() const { return _bridge_pc_to_vesc; }
+    uint32_t getBridgeVescToPcBytes() const { return _bridge_vesc_to_pc; }
+
 private:
     void runSimulation(DashTelemetry &telemetry);
     void pollRealVesc(DashTelemetry &telemetry);
     void sendVescGetValues();
+    void sendVescGetDecodedAdc();
     bool parseVescPacket(uint8_t *buffer, size_t len, DashTelemetry &telemetry);
 
     // Telemetry & Ebike Physics Parameters
@@ -36,6 +45,11 @@ private:
     float _target_rpm;
     uint32_t _last_poll_ms;
     uint32_t _sim_last_update_ms;
+
+    // USB Bridge State
+    bool     _bridge_active;
+    uint32_t _bridge_pc_to_vesc;
+    uint32_t _bridge_vesc_to_pc;
 };
 
 extern VescHandler Vesc;

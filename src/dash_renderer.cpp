@@ -1,5 +1,6 @@
 #include "dash_renderer.h"
 #include "buttons.h"
+#include "vesc_uart.h"
 #include <math.h>
 
 DashboardRenderer Renderer;
@@ -199,6 +200,15 @@ void DashboardRenderer::render(const DashTelemetry &telemetry) {
                 _menu_dirty = true;
             }
             renderSettingsScreen(telemetry);
+            break;
+
+        case SCREEN_VESC_BRIDGE:
+            if (_screen_dirty) {
+                _canvas->fillScreen(COLOR_BG);
+                initVescBridgeScreen(telemetry);
+                _screen_dirty = false;
+            }
+            renderVescBridgeScreen(telemetry);
             break;
 
         default:
@@ -449,13 +459,8 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         _cache.watts = curWatts;
         char numStr[16];
         uint16_t pCol = getPowerColor(telemetry.power_watts);
-        if (curWatts >= 1000) {
-            snprintf(numStr, sizeof(numStr), "%.2f", curWatts / 1000.0f);
-            drawValWithUnit(245, 74, 115, 50, numStr, "kW", pCol, COLOR_LIGHT_GRAY);
-        } else {
-            snprintf(numStr, sizeof(numStr), "%d", curWatts);
-            drawValWithUnit(245, 74, 115, 50, numStr, "W", pCol, COLOR_LIGHT_GRAY);
-        }
+        snprintf(numStr, sizeof(numStr), "%d", curWatts);
+        drawValWithUnit(245, 74, 115, 50, numStr, "W", pCol, COLOR_LIGHT_GRAY);
     }
 
     int curPhaseX10 = (int)roundf(telemetry.phase_amps * 10.0f);
@@ -678,13 +683,8 @@ void DashboardRenderer::renderHorizontalBarStyle(const DashTelemetry &telemetry)
         _cache.watts = curWatts;
         char numStr[16];
         uint16_t pCol = getPowerColor(telemetry.power_watts);
-        if (curWatts >= 1000) {
-            snprintf(numStr, sizeof(numStr), "%.2f", curWatts / 1000.0f);
-            drawValWithUnit(30, 80, 115, 50, numStr, "kW", pCol, COLOR_LIGHT_GRAY);
-        } else {
-            snprintf(numStr, sizeof(numStr), "%d", curWatts);
-            drawValWithUnit(30, 80, 115, 50, numStr, "W", pCol, COLOR_LIGHT_GRAY);
-        }
+        snprintf(numStr, sizeof(numStr), "%d", curWatts);
+        drawValWithUnit(30, 80, 115, 50, numStr, "W", pCol, COLOR_LIGHT_GRAY);
     }
 
     int curPhaseX10 = (int)roundf(telemetry.phase_amps * 10.0f);
@@ -1017,16 +1017,9 @@ void DashboardRenderer::renderPerfStatsScreen(const DashTelemetry &telemetry) {
     if (curPeakWatts != _cache.peak_watts) {
         _cache.peak_watts = curPeakWatts;
         char pNumStr[16];
-        const char *pUnit = "W";
-        if (curPeakWatts >= 1000) {
-            snprintf(pNumStr, sizeof(pNumStr), "%.2f", curPeakWatts / 1000.0f);
-            pUnit = "kW";
-        } else {
-            snprintf(pNumStr, sizeof(pNumStr), "%d", curPeakWatts);
-            pUnit = "W";
-        }
+        snprintf(pNumStr, sizeof(pNumStr), "%d", curPeakWatts);
         uint16_t pCol = getPowerColor(telemetry.stats.peak_power_watts);
-        drawValWithUnit(40, 108, 125, 55, pNumStr, pUnit, pCol, COLOR_AMBER, COLOR_SURFACE);
+        drawValWithUnit(40, 108, 125, 55, pNumStr, "W", pCol, COLOR_AMBER, COLOR_SURFACE);
     }
 
     // Card 1: Secondary Key-Value Rows (Only update when value changes)
@@ -1132,7 +1125,7 @@ static int getSubItemCount(uint8_t sub_id) {
         case 1: return 2;
         case 2: return 5;
         case 3: return 3;
-        case 4: return 3;
+        case 4: return 4;
         default: return 0;
     }
 }
@@ -1277,12 +1270,18 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                     snprintf(d2, d2_sz, "Press [1+2] to clear");
                     break;
                 case 1:
+                    snprintf(title, title_sz, "VESC USB Bridge");
+                    snprintf(val, val_sz, "START USB BRIDGE");
+                    snprintf(d1, d1_sz, "PC VESC Tool Bridge");
+                    snprintf(d2, d2_sz, "Press [1+2] to start");
+                    break;
+                case 2:
                     snprintf(title, title_sz, "Factory Reset");
                     snprintf(val, val_sz, "RESTORE DEFAULTS");
                     snprintf(d1, d1_sz, "Restore defaults");
                     snprintf(d2, d2_sz, "Press [1+2] to reset");
                     break;
-                case 2:
+                case 3:
                     snprintf(title, title_sz, "VESC Hardware Link");
                     snprintf(val, val_sz, telemetry.vesc_connected ? "COMM HEALTHY" : "OFFLINE");
                     snprintf(d1, d1_sz, "Flipsky 75100 V1");
@@ -1386,25 +1385,52 @@ void DashboardRenderer::renderSettingsScreen(const DashTelemetry &telemetry) {
         _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
         _canvas->drawString(ROOT_CATEGORIES[_menu_root_idx], 365, 68, &fonts::Font4);
 
-        const char *descs1[5] = {
-            "Power Limits & Drive",
-            "Theme & Brightness",
-            "Dual 52V Management",
-            "Speed & Gearing",
-            "Diagnostics & Reset"
-        };
-        const char *descs2[5] = {
-            "Bat 35A, Phase 70A",
-            "Analog / Bar Style",
-            "Independent SoH & Wh",
-            "Tire, Poles, Ratio",
-            "Trip & Defaults"
-        };
+        char d1[48] = {0};
+        char d2[48] = {0};
+        DashSettings &s = Settings.get();
+
+        switch (_menu_root_idx) {
+            case 0: // POWER & DRIVE
+                snprintf(d1, sizeof(d1), "Bat %dA | Phase %dA", s.max_battery_amps, s.max_phase_amps);
+                if (s.max_speed_kmh == 0) {
+                    snprintf(d2, sizeof(d2), "FW %dA | Spd Limit: Off", s.field_weak_amps);
+                } else {
+                    snprintf(d2, sizeof(d2), "FW %dA | Spd %d km/h", s.field_weak_amps, s.max_speed_kmh);
+                }
+                break;
+
+            case 1: // DISPLAY & UI
+                snprintf(d1, sizeof(d1), "Style: %s", (s.dash_style == STYLE_ANALOG_DIAL) ? "Analog Dial" : "Horizontal Bar");
+                snprintf(d2, sizeof(d2), "Brightness: %d%%", s.brightness_pct);
+                break;
+
+            case 2: // BATTERY PROFILES
+                {
+                    uint8_t pid = s.active_battery_profile;
+                    snprintf(d1, sizeof(d1), "Active: P%d (%s)", pid, Battery.getProfile(pid).name);
+                    snprintf(d2, sizeof(d2), "Trim: %+.1fV | %dWh", s.voltage_trim_v, Battery.getProfile(pid).nominal_wh);
+                }
+                break;
+
+            case 3: // BIKE SETUP
+                snprintf(d1, sizeof(d1), "Wheel: %.1f\" | Poles: %d", s.wheel_diameter_in, s.motor_pole_pairs);
+                snprintf(d2, sizeof(d2), "Internal Ratio: %.2f:1", s.gear_ratio);
+                break;
+
+            case 4: // SYSTEM & DIAG
+                snprintf(d1, sizeof(d1), "VESC: %s", telemetry.vesc_connected ? "Link Online (115k)" : "Link Offline");
+                snprintf(d2, sizeof(d2), "Trip: %.1f km | USB Bridge", telemetry.trip_km);
+                break;
+
+            default:
+                break;
+        }
+
         _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
-        _canvas->drawString(descs1[_menu_root_idx], 365, 120, &fonts::Font4);
+        _canvas->drawString(d1, 365, 120, &fonts::Font4);
 
         _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
-        _canvas->drawString(descs2[_menu_root_idx], 365, 154, &fonts::Font4);
+        _canvas->drawString(d2, 365, 154, &fonts::Font4);
 
         // Hints strictly under 21 characters:
         _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
@@ -1626,11 +1652,20 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
                 telemetry.stats.reset();
                 _menu_dirty = true;
             } else if (_menu_root_idx == 4 && _menu_sub_idx == 1) {
+                // Start VESC USB Bridge
+                _menu_in_sub = false;
+                _menu_edit_mode = false;
+                Buttons.setEditMode(false);
+                Vesc.enterBridgeMode();
+                telemetry.screen = SCREEN_VESC_BRIDGE;
+                _screen_dirty = true;
+                _cache.invalidate();
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 2) {
                 // Restore Factory Defaults
                 Settings.resetToDefaults();
                 _display->setBrightness(map(Settings.get().brightness_pct, 0, 100, 0, 255));
                 _menu_dirty = true;
-            } else if (_menu_root_idx == 4 && _menu_sub_idx == 2) {
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 3) {
                 // VESC Status is info-only
             } else {
                 _menu_edit_mode = true;
@@ -1661,3 +1696,82 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
         }
     }
 }
+
+// ==============================================================================
+// SCREEN 4: VESC TOOL USB PASSTHROUGH BRIDGE
+// ==============================================================================
+void DashboardRenderer::initVescBridgeScreen(const DashTelemetry &telemetry) {
+    // Header Bar
+    _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
+    _canvas->drawString("VESC TOOL USB PASSTHROUGH BRIDGE", 20, 14, &fonts::Font4);
+
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_BG);
+    _canvas->setTextPadding(300);
+    _canvas->drawRightString("115200 BAUD (CDC <-> UART)", 800, 14, &fonts::Font4);
+    _canvas->setTextPadding(0);
+
+    _canvas->drawFastHLine(20, 44, 780, COLOR_BORDER);
+
+    // Left Card: PC / VESC Tool
+    drawCard(20, 54, 380, 186, COLOR_SURFACE, COLOR_BORDER);
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawString("PC / VESC TOOL (USB)", 36, 68, &fonts::Font4);
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+    _canvas->drawString("Port: /dev/ttyACM0 (CDC)", 36, 96, &fonts::Font4);
+    _canvas->drawString("DATA RECEIVED:", 36, 134, &fonts::Font4);
+
+    // Right Card: Flipsky 75100 VESC
+    drawCard(420, 54, 380, 186, COLOR_SURFACE, COLOR_BORDER);
+    _canvas->setTextColor(COLOR_GREEN, COLOR_SURFACE);
+    _canvas->drawString("FLIPSKY 75100 VESC", 436, 68, &fonts::Font4);
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+    _canvas->drawString("Pins: GPIO 43/44 (UART)", 436, 96, &fonts::Font4);
+    _canvas->drawString("DATA FORWARDED:", 436, 134, &fonts::Font4);
+
+    // Bottom Help Banner
+    _canvas->fillRoundRect(20, 252, 780, 54, 6, 0x18E3);
+    _canvas->drawRoundRect(20, 252, 780, 54, 6, COLOR_AMBER);
+    _canvas->setTextColor(COLOR_AMBER, 0x18E3);
+    _canvas->drawCenterString("[Hold BTN2] or [1+2] to Exit Bridge & Return to Dash", 410, 268, &fonts::Font4);
+
+    _bridge_last_pc_bytes = 0xFFFFFFFF;
+    _bridge_last_vesc_bytes = 0xFFFFFFFF;
+}
+
+void DashboardRenderer::renderVescBridgeScreen(const DashTelemetry &telemetry) {
+    uint32_t pc_bytes = Vesc.getBridgePcToVescBytes();
+    uint32_t vesc_bytes = Vesc.getBridgeVescToPcBytes();
+
+    if (pc_bytes != _bridge_last_pc_bytes) {
+        _bridge_last_pc_bytes = pc_bytes;
+        char buf[32];
+        if (pc_bytes < 1024) {
+            snprintf(buf, sizeof(buf), "%u B", (unsigned)pc_bytes);
+        } else if (pc_bytes < 1048576) {
+            snprintf(buf, sizeof(buf), "%.1f KB", pc_bytes / 1024.0f);
+        } else {
+            snprintf(buf, sizeof(buf), "%.2f MB", pc_bytes / 1048576.0f);
+        }
+        _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(320);
+        _canvas->drawString(buf, 36, 168, &fonts::Font6);
+        _canvas->setTextPadding(0);
+    }
+
+    if (vesc_bytes != _bridge_last_vesc_bytes) {
+        _bridge_last_vesc_bytes = vesc_bytes;
+        char buf[32];
+        if (vesc_bytes < 1024) {
+            snprintf(buf, sizeof(buf), "%u B", (unsigned)vesc_bytes);
+        } else if (vesc_bytes < 1048576) {
+            snprintf(buf, sizeof(buf), "%.1f KB", vesc_bytes / 1024.0f);
+        } else {
+            snprintf(buf, sizeof(buf), "%.2f MB", vesc_bytes / 1048576.0f);
+        }
+        _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+        _canvas->setTextPadding(320);
+        _canvas->drawString(buf, 436, 168, &fonts::Font6);
+        _canvas->setTextPadding(0);
+    }
+}
+

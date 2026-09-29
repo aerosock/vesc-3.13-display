@@ -18,6 +18,8 @@ void SettingsManager::loadDefaults() {
     _settings.motor_pole_pairs       = 15;
     _settings.gear_ratio             = 1.0f;
     _settings.active_battery_profile = 0;
+    _settings.voltage_trim_v         = -0.3f;
+    _settings.throttle_adc_channel   = 1; // Default to ADC2 as requested
 }
 
 void SettingsManager::begin() {
@@ -40,6 +42,8 @@ void SettingsManager::begin() {
         _settings.motor_pole_pairs       = _prefs.getUChar("poles", 15);
         _settings.gear_ratio             = _prefs.getFloat("gear", 1.0f);
         _settings.active_battery_profile = _prefs.getUChar("bat_prof", 0);
+        _settings.voltage_trim_v         = _prefs.getFloat("v_trim", -0.3f);
+        _settings.throttle_adc_channel   = _prefs.getUChar("adc_ch", 1);
         Serial.println("[SETTINGS] Loaded configuration from NVS flash.");
     }
 }
@@ -56,6 +60,8 @@ void SettingsManager::save() {
     _prefs.putUChar("poles", _settings.motor_pole_pairs);
     _prefs.putFloat("gear", _settings.gear_ratio);
     _prefs.putUChar("bat_prof", _settings.active_battery_profile);
+    _prefs.putFloat("v_trim", _settings.voltage_trim_v);
+    _prefs.putUChar("adc_ch", _settings.throttle_adc_channel);
 }
 
 void SettingsManager::resetToDefaults() {

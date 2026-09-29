@@ -41,7 +41,7 @@ void setup() {
     telemetry.duty_cycle_pct      = 0.0f;
     telemetry.rpm                 = 0.0f;
     telemetry.throttle_pct        = 0.0f;
-    telemetry.voltage             = 53.8f;
+    telemetry.voltage             = 0.0f;
     telemetry.current_amps        = 0.0f;
     telemetry.phase_amps          = 0.0f;
     telemetry.power_watts         = 0.0f;
@@ -103,7 +103,14 @@ void loop() {
     NavAction nav = Buttons.getNavAction();
 
     if (nav != NAV_NONE) {
-        if (telemetry.screen == SCREEN_SETTINGS_MENU) {
+        if (Vesc.isBridgeActive()) {
+            if (nav == NAV_BTN2_LONG || nav == NAV_BOTH_PRESSED || nav == NAV_BTN1_LONG) {
+                Vesc.exitBridgeMode();
+                telemetry.screen = SCREEN_RIDE_DASH;
+                Renderer.markScreenDirty();
+                Renderer.invalidateCache();
+            }
+        } else if (telemetry.screen == SCREEN_SETTINGS_MENU) {
             Renderer.handleMenuNav(nav, telemetry);
         } else {
             switch (nav) {
@@ -157,18 +164,25 @@ void loop() {
         }
     }
 
-    // 2. Update Telemetry (Simulation Physics or Live VESC UART packets)
-    Vesc.update(telemetry);
+    // 2. Update Telemetry or Forward Bridge Traffic
+    if (Vesc.isBridgeActive()) {
+        Vesc.updateBridge();
+    } else {
+        Vesc.update(telemetry);
+    }
     telemetry.uptime_sec = (now - boot_ms) / 1000;
 
     // 3. Render at smooth ~30 FPS rate
     if (now - last_render_ms >= 33) {
         last_render_ms = now;
         Renderer.render(telemetry);
+        if (Vesc.isBridgeActive()) {
+            Vesc.updateBridge();
+        }
     }
 
-    // 4. Debug print over USB Serial every 2 seconds
-    if (now - last_log_ms >= 2000) {
+    // 4. Debug print over USB Serial every 2 seconds (only when bridge is inactive)
+    if (!Vesc.isBridgeActive() && (now - last_log_ms >= 2000)) {
         last_log_ms = now;
         Serial.printf("[DASH] Screen: %d | Spd: %.1f km/h | Duty: %.1f%% | Bat: %.1fV (%.0f%%) | Cur: %.1fA | Pha: %.1fA | Est: %.1fkm\n",
                       (int)telemetry.screen, telemetry.speed_kmh, telemetry.duty_cycle_pct, telemetry.voltage,

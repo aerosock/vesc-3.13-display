@@ -14,6 +14,7 @@ public:
     void triggerNeedleSweep();
     bool isSweeping() const { return _is_sweeping; }
     void markScreenDirty() { _screen_dirty = true; }
+    void invalidateCache() { _cache.invalidate(); }
 
     // Menu Navigation Handler (called by main when in SCREEN_SETTINGS_MENU)
     void handleMenuNav(NavAction action, DashTelemetry &telemetry);
@@ -52,9 +53,14 @@ private:
     void renderSubmenu(uint8_t sub_id, const DashTelemetry &telemetry);
     void adjustCurrentSetting(int direction, DashTelemetry &telemetry); // +1 or -1
 
+    // Screen 4: Transparent USB CDC <-> UART Bridge for VESC Tool
+    void initVescBridgeScreen(const DashTelemetry &telemetry);
+    void renderVescBridgeScreen(const DashTelemetry &telemetry);
+
     // Common UI Helpers
     void drawCard(int x, int y, int w, int h, uint16_t bg, uint16_t border);
     void drawValWithUnit(int x, int y, int numPadW, int unitPadW, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol, uint16_t bgCol = 0x0821);
+    void drawThrottleBar(int x, int y, int w, int h, float pct);
 
     // Screen State
     DashboardScreen _active_screen;
@@ -74,6 +80,8 @@ private:
         int speed;
         int duty_x10;
         int duty_fill_w;
+        int throttle_pct;
+        int throttle_fill_w;
         int battery_pct;
         int voltage_x10;
         int current_x10;
@@ -103,6 +111,8 @@ private:
             speed = -999;
             duty_x10 = -999;
             duty_fill_w = -1;
+            throttle_pct = -1;
+            throttle_fill_w = -1;
             battery_pct = -1;
             voltage_x10 = -1;
             current_x10 = -1;
@@ -141,6 +151,10 @@ private:
     float    _sweep_progress;
     float    _sweep_duty;
     uint32_t _last_sweep_tick_ms;
+
+    // VESC Bridge Display State
+    uint32_t _bridge_last_pc_bytes;
+    uint32_t _bridge_last_vesc_bytes;
 };
 
 extern DashboardRenderer Renderer;

@@ -2,9 +2,9 @@
 
 ButtonHandler Buttons;
 
-static const uint32_t DEBOUNCE_TIME_MS   = 28;  // Physical contact debounce stability threshold
-static const uint32_t CHORD_WINDOW_MS    = 85;  // Grace period to detect second button of a dual-press
-static const uint32_t CHORD_COOLDOWN_MS  = 120; // Required release silence after chord before unlocking
+static const uint32_t DEBOUNCE_TIME_MS   = 20;  // Physical contact debounce stability threshold
+static const uint32_t CHORD_WINDOW_MS    = 130; // Grace period to detect second button of a dual-press
+static const uint32_t CHORD_COOLDOWN_MS  = 150; // Required release silence after chord before unlocking
 static const uint32_t REPEAT_DELAY_MS    = 450; // Hold delay in edit mode before auto-repeat begins
 static const uint32_t LONG_PRESS_TIME_MS = 500; // Hold delay in normal mode for long press
 
@@ -71,8 +71,8 @@ void ButtonHandler::update() {
     bool both_down = (_btn1.is_down && _btn2.is_down);
     bool both_up   = (!_btn1.is_down && !_btn2.is_down);
 
-    // 2. Track continuous release silence
-    if (both_up) {
+    // 2. Track continuous release silence (both debounced AND raw contacts released)
+    if (both_up && !raw1 && !raw2) {
         if (_all_up_since_ms == 0) {
             _all_up_since_ms = now;
         }
@@ -83,28 +83,41 @@ void ButtonHandler::update() {
     // 3. Post-Chord Lockout & Release Cooldown
     // Prevents asymmetric finger lift, chatter, or microvibrations from leaking single clicks
     if (_chord_active) {
-        if (both_up && (now - _all_up_since_ms >= CHORD_COOLDOWN_MS)) {
+        if (both_up && !raw1 && !raw2 && (now - _all_up_since_ms >= CHORD_COOLDOWN_MS)) {
             _chord_active = false;
             _require_all_up = false;
             _btn1.single_pending = false;
             _btn2.single_pending = false;
+            _btn1.long_press_fired = true;
+            _btn2.long_press_fired = true;
         }
         return; // Suppress all actions while chord is active or cooling down
     }
 
     // 4. Release Gate (after entering edit mode or screen transition)
     if (_require_all_up) {
-        if (both_up && (now - _all_up_since_ms >= 50)) {
+        if (both_up && !raw1 && !raw2 && (now - _all_up_since_ms >= 50)) {
             _require_all_up = false;
             _btn1.single_pending = false;
             _btn2.single_pending = false;
+            _btn1.long_press_fired = true;
+            _btn2.long_press_fired = true;
         }
         return;
     }
 
     // 5. Dual-Press (Chord) Detection with Coincidence Window
-    // Triggers if both buttons are down, or if one is down/pending and second joins within window
-    if (both_down || (_btn1.single_pending && _btn2.is_down) || (_btn2.single_pending && _btn1.is_down)) {
+    // Triggers if:
+    // a) Both buttons are debounced down
+    // b) One is debounced down and other is physically contacted (raw)
+    // c) One was debounced and pending, and second is pressed (debounced or raw) within chord window
+    bool chord_detected = both_down ||
+                          (_btn1.is_down && raw2) ||
+                          (_btn2.is_down && raw1) ||
+                          (_btn1.single_pending && (_btn2.is_down || raw2)) ||
+                          (_btn2.single_pending && (_btn1.is_down || raw1));
+
+    if (chord_detected) {
         _chord_active = true;
         _all_up_since_ms = 0;
         _btn1.single_pending = false;
