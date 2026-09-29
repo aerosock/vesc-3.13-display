@@ -284,17 +284,17 @@ void DashboardRenderer::initLeftHugAnalogStyle(const DashTelemetry &telemetry) {
             _canvas->drawLine(x1, y1 + 1, x2, y2 + 1, tColor);
 
             int duty_val = i * 5;
-            int numX = cx + (int)(cosf(ang) * 136);
-            int numY = cy + (int)(sinf(ang) * 136);
+            int numX = cx + (int)(cosf(ang) * 142);
+            int numY = cy + (int)(sinf(ang) * 142);
 
             if (duty_val == 120) {
                 _canvas->setTextColor(COLOR_RED, COLOR_BG);
-                _canvas->drawCenterString("FW", numX, numY - 12, &fonts::Font4);
+                _canvas->drawCenterString("FW", numX, numY - 8, &fonts::Font4);
             } else {
                 char buf[8];
                 snprintf(buf, sizeof(buf), "%d", duty_val);
                 _canvas->setTextColor(tColor, COLOR_BG);
-                _canvas->drawCenterString(buf, numX, numY - 12, &fonts::Font4);
+                _canvas->drawCenterString(buf, numX, numY - 8, &fonts::Font4);
             }
         }
     }
@@ -342,13 +342,13 @@ void DashboardRenderer::drawAnalogNeedle(int cx, int cy, int length, float angle
     float cos_p = cosf(perp);
     float sin_p = sinf(perp);
 
-    // Needle starts at outer rim of hub circle (r=38) and extends to length
-    int b1X = cx + (int)(cos_a * 38 + cos_p * 4);
-    int b1Y = cy + (int)(sin_a * 38 + sin_p * 4);
-    int b2X = cx + (int)(cos_a * 38 - cos_p * 4);
-    int b2Y = cy + (int)(sin_a * 38 - sin_p * 4);
-    int tipX = cx + (int)(cos_a * length);
-    int tipY = cy + (int)(sin_a * length);
+    // Needle starts under the hub cap (r=26) with 6px base width, tapering to sharp tip at length
+    int b1X = cx + (int)roundf(cos_a * 26.0f + cos_p * 3.0f);
+    int b1Y = cy + (int)roundf(sin_a * 26.0f + sin_p * 3.0f);
+    int b2X = cx + (int)roundf(cos_a * 26.0f - cos_p * 3.0f);
+    int b2Y = cy + (int)roundf(sin_a * 26.0f - sin_p * 3.0f);
+    int tipX = cx + (int)roundf(cos_a * (float)length);
+    int tipY = cy + (int)roundf(sin_a * (float)length);
 
     _canvas->fillTriangle(tipX, tipY, b1X, b1Y, b2X, b2Y, color);
 
@@ -367,7 +367,7 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
     if (currentDuty < 0.0f) currentDuty = 0.0f;
     if (currentDuty > 120.0f) currentDuty = 120.0f;
 
-    // 1. Erase Previous Needle (Zero-Flicker Differential Triangle outside hub)
+    // 1. Erase Previous Needle (Clean differential triangle erase with full perimeter cleanup)
     if (_last_needle.valid) {
         _canvas->fillTriangle(_last_needle.tipX, _last_needle.tipY,
                               _last_needle.b1X, _last_needle.b1Y,
@@ -375,26 +375,30 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
                               COLOR_BG);
         _canvas->drawLine(_last_needle.b1X, _last_needle.b1Y, _last_needle.tipX, _last_needle.tipY, COLOR_BG);
         _canvas->drawLine(_last_needle.b2X, _last_needle.b2Y, _last_needle.tipX, _last_needle.tipY, COLOR_BG);
+        _canvas->drawLine(_last_needle.b1X, _last_needle.b1Y, _last_needle.b2X, _last_needle.b2Y, COLOR_BG);
     }
 
-    // 2. Draw Needle: Angle +63° (bottom) to -63° (top)
+    // 2. Draw Needle: Angle +63° (bottom 0%) to -63° (top 120% FW), length=120 stays safely inside scale numbers
     float frac = currentDuty / 120.0f;
     float needle_angle = 1.10f - (frac * 2.20f);
 
-    drawAnalogNeedle(cx, cy, 145, needle_angle, COLOR_NEEDLE);
+    drawAnalogNeedle(cx, cy, 120, needle_angle, COLOR_NEEDLE);
 
-    // 3. Digital Duty Cycle Readout Mounted Inside Central Hub Circle
+    // 3. Central Hub Cap & Digital Readout (Redrawn over needle pivot: eliminates all rim artifacts and seams)
+    _canvas->fillCircle(cx, cy, 38, COLOR_SURFACE);
+    _canvas->drawCircle(cx, cy, 38, COLOR_BORDER);
+    _canvas->drawCircle(cx, cy, 37, COLOR_BORDER);
+    _canvas->setTextColor(COLOR_MUTED_GRAY, COLOR_SURFACE);
+    _canvas->drawCenterString("DUTY", cx, cy - 18, &fonts::Font2);
+
     int duty_int = (int)roundf(currentDuty);
-    if (duty_int != _cache.duty_x10) {
-        _cache.duty_x10 = duty_int;
-        char dutyBuf[16];
-        snprintf(dutyBuf, sizeof(dutyBuf), "%d%%", duty_int);
-        uint16_t dCol = getDutyColor(currentDuty);
-        _canvas->setTextColor(dCol, COLOR_SURFACE);
-        _canvas->setTextPadding(58);
-        _canvas->drawCenterString(dutyBuf, cx, cy - 2, &fonts::Font4);
-        _canvas->setTextPadding(0);
-    }
+    char dutyBuf[16];
+    snprintf(dutyBuf, sizeof(dutyBuf), "%d%%", duty_int);
+    uint16_t dCol = getDutyColor(currentDuty);
+    _canvas->setTextColor(dCol, COLOR_SURFACE);
+    _canvas->setTextPadding(58);
+    _canvas->drawCenterString(dutyBuf, cx, cy - 2, &fonts::Font4);
+    _canvas->setTextPadding(0);
 
     // 4. Top Ribbon
     if (telemetry.battery_profile_id != _cache.batt_prof) {
