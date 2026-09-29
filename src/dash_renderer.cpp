@@ -342,12 +342,11 @@ void DashboardRenderer::drawAnalogNeedle(int cx, int cy, int length, float angle
     float cos_p = cosf(perp);
     float sin_p = sinf(perp);
 
-    // Needle starts at outer rim of hub circle (r=39, 1px outside r=38 border) with half-width 2.5px
-    // Chord midpoint sqrt(39^2 - 2.5^2) = 38.92px > 38.0px (100% outside hub!)
-    int b1X = cx + (int)roundf(cos_a * 39.0f + cos_p * 2.5f);
-    int b1Y = cy + (int)roundf(sin_a * 39.0f + sin_p * 2.5f);
-    int b2X = cx + (int)roundf(cos_a * 39.0f - cos_p * 2.5f);
-    int b2Y = cy + (int)roundf(sin_a * 39.0f - sin_p * 2.5f);
+    // Needle starts tucked under the hub rim at r=34 with half-width 2.5px
+    int b1X = cx + (int)roundf(cos_a * 34.0f + cos_p * 2.5f);
+    int b1Y = cy + (int)roundf(sin_a * 34.0f + sin_p * 2.5f);
+    int b2X = cx + (int)roundf(cos_a * 34.0f - cos_p * 2.5f);
+    int b2Y = cy + (int)roundf(sin_a * 34.0f - sin_p * 2.5f);
     int tipX = cx + (int)roundf(cos_a * (float)length);
     int tipY = cy + (int)roundf(sin_a * (float)length);
 
@@ -375,7 +374,7 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
     if (duty_changed) {
         last_rendered_duty = currentDuty;
 
-        // Erase previous needle (strictly confined in black band 39 <= r <= 120, never touches hub or numbers)
+        // Erase previous needle (strictly confined in black band 34 <= r <= 120, never touches scale numbers)
         if (_last_needle.valid) {
             _canvas->fillTriangle(_last_needle.tipX, _last_needle.tipY,
                                   _last_needle.b1X, _last_needle.b1Y,
@@ -391,6 +390,13 @@ void DashboardRenderer::renderLeftHugAnalogStyle(const DashTelemetry &telemetry)
         float needle_angle = 1.10f - (frac * 2.20f);
 
         drawAnalogNeedle(cx, cy, 120, needle_angle, COLOR_NEEDLE);
+
+        // Restore clean circular hub rim over needle base (eliminates black notches & red rim artifacts!)
+        _canvas->drawCircle(cx, cy, 38, COLOR_BORDER);
+        _canvas->drawCircle(cx, cy, 37, COLOR_BORDER);
+        _canvas->drawCircle(cx, cy, 36, COLOR_SURFACE);
+        _canvas->drawCircle(cx, cy, 35, COLOR_SURFACE);
+        _canvas->drawCircle(cx, cy, 34, COLOR_SURFACE);
     }
 
     // 2. Digital Duty Readout inside Central Hub (Native text padding updates text only when integer changes)
