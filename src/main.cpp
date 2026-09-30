@@ -12,7 +12,9 @@
 static DashTelemetry telemetry;
 
 void setup() {
-    // 1. Initialize USB CDC Serial Monitor
+    // 1. Initialize USB CDC Serial Monitor with 4KB buffers for VESC configuration packets
+    Serial.setRxBufferSize(4096);
+    Serial.setTxBufferSize(4096);
     Serial.begin(115200);
     delay(500);
     Serial.println("\n=============================================");
@@ -166,14 +168,22 @@ void loop() {
 
     // 2. Update Telemetry or Forward Bridge Traffic
     if (Vesc.isBridgeActive()) {
-        Vesc.updateBridge();
+        // Fast drain loop for high-throughput VESC configuration transfers
+        for (int p = 0; p < 20; p++) {
+            if (Serial.available() > 0 || VESC_UART_PORT.available() > 0) {
+                Vesc.updateBridge();
+            } else {
+                break;
+            }
+        }
     } else {
         Vesc.update(telemetry);
     }
     telemetry.uptime_sec = (now - boot_ms) / 1000;
 
-    // 3. Render at smooth ~30 FPS rate
-    if (now - last_render_ms >= 33) {
+    // 3. Render at smooth ~30 FPS rate (throttled to 5 FPS in bridge mode to maximize USB/UART throughput)
+    uint32_t render_interval = Vesc.isBridgeActive() ? 200 : 33;
+    if (now - last_render_ms >= render_interval) {
         last_render_ms = now;
         Renderer.render(telemetry);
         if (Vesc.isBridgeActive()) {

@@ -65,6 +65,14 @@ public:
     void println(float f) { printf("%f\n", f); }
     template<typename... Args>
     void printf(const char *fmt, Args... args) { ::printf(fmt, args...); }
+    size_t setRxBufferSize(size_t size) { return size; }
+    size_t setTxBufferSize(size_t size) { return size; }
+    void begin(unsigned long baud = 0) {}
+    int available() { return 0; }
+    int read() { return -1; }
+    size_t read(uint8_t *buffer, size_t size) { return 0; }
+    size_t write(uint8_t b) { return 1; }
+    size_t write(const uint8_t *buffer, size_t size) { return size; }
 };
 
 extern MockSerial Serial;
