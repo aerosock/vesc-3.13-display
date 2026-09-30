@@ -356,18 +356,19 @@ bool VescHandler::parseVescPacket(uint8_t *buffer, size_t len, DashTelemetry &te
 
     // 1. Decoded ADC Packet (COMM_GET_DECODED_ADC = 0x20 / 32)
     if (cmd_id == 0x20) {
-        if (len >= 11) {
+        if (payload_len >= 5) {
             int32_t raw_level1 = (int32_t)(((uint32_t)payload[1] << 24) | ((uint32_t)payload[2] << 16) | ((uint32_t)payload[3] << 8) | (uint32_t)payload[4]);
-            int32_t raw_volt1  = (len >= 15) ? (int32_t)(((uint32_t)payload[5] << 24) | ((uint32_t)payload[6] << 16) | ((uint32_t)payload[7] << 8) | (uint32_t)payload[8]) : 0;
-            int32_t raw_level2 = (len >= 19) ? (int32_t)(((uint32_t)payload[9] << 24) | ((uint32_t)payload[10] << 16) | ((uint32_t)payload[11] << 8) | (uint32_t)payload[12]) : 0;
-            int32_t raw_volt2  = (len >= 22) ? (int32_t)(((uint32_t)payload[13] << 24) | ((uint32_t)payload[14] << 16) | ((uint32_t)payload[15] << 8) | (uint32_t)payload[16]) : 0;
+            int32_t raw_volt1  = (payload_len >= 9)  ? (int32_t)(((uint32_t)payload[5] << 24) | ((uint32_t)payload[6] << 16) | ((uint32_t)payload[7] << 8) | (uint32_t)payload[8]) : 0;
+            int32_t raw_level2 = (payload_len >= 13) ? (int32_t)(((uint32_t)payload[9] << 24) | ((uint32_t)payload[10] << 16) | ((uint32_t)payload[11] << 8) | (uint32_t)payload[12]) : 0;
+            int32_t raw_volt2  = (payload_len >= 17) ? (int32_t)(((uint32_t)payload[13] << 24) | ((uint32_t)payload[14] << 16) | ((uint32_t)payload[15] << 8) | (uint32_t)payload[16]) : 0;
 
             _last_adc1_v = raw_volt1 / 1000000.0f;
             _last_adc1_pct = (raw_level1 / 1000000.0f) * 100.0f;
             _last_adc2_v = raw_volt2 / 1000000.0f;
             _last_adc2_pct = (raw_level2 / 1000000.0f) * 100.0f;
 
-            int32_t chosen_level = (Settings.get().throttle_adc_channel == 1 && len >= 19) ? raw_level2 : raw_level1;
+            // Choose ADC1 (default 0) or ADC2 (1) based on settings
+            int32_t chosen_level = (Settings.get().throttle_adc_channel == 1 && payload_len >= 13) ? raw_level2 : raw_level1;
             float pct = (chosen_level / 1000000.0f) * 100.0f;
             if (pct < 0.0f) pct = 0.0f;
             if (pct > 100.0f) pct = 100.0f;

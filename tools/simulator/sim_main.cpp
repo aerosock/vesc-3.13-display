@@ -277,6 +277,7 @@ int main(int argc, char **argv) {
     t.screen = SCREEN_RIDE_DASH;
     t.speed_kmh = 0.0f;
     t.duty_cycle_pct = 0.0f;
+    t.throttle_pct = 0.0f;
     t.power_watts = 0.0f;
     t.phase_amps = 0.0f;
     Renderer.markScreenDirty();
@@ -287,6 +288,7 @@ int main(int argc, char **argv) {
     // ----------------------------------------------------
     t.speed_kmh = 32.4f;
     t.duty_cycle_pct = 48.0f;
+    t.throttle_pct = 42.0f;
     t.power_watts = 680.0f;
     t.phase_amps = 26.5f;
     t.voltage = 52.1f;
@@ -298,6 +300,7 @@ int main(int argc, char **argv) {
     // ----------------------------------------------------
     t.speed_kmh = 58.2f;
     t.duty_cycle_pct = 112.5f; // Over 100% (Field Weakening!)
+    t.throttle_pct = 95.0f;
     t.power_watts = 1980.0f;   // Over 1500W (Red)
     t.phase_amps = 64.0f;      // Over 55A (Red)
     t.voltage = 49.4f;
@@ -312,6 +315,7 @@ int main(int argc, char **argv) {
     Settings.get().dash_style = STYLE_HORIZONTAL_BAR;
     t.speed_kmh = 34.0f;
     t.duty_cycle_pct = 52.0f;
+    t.throttle_pct = 45.0f;
     t.power_watts = 720.0f;
     t.phase_amps = 28.0f;
     t.temp_motor = 45.0f;
@@ -324,6 +328,7 @@ int main(int argc, char **argv) {
     // ----------------------------------------------------
     t.speed_kmh = 59.1f;
     t.duty_cycle_pct = 114.0f;
+    t.throttle_pct = 98.0f;
     t.power_watts = 2150.0f;
     t.phase_amps = 68.0f;
     renderAndSave("05_horizontal_field_weakening", t);

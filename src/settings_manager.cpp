@@ -19,7 +19,7 @@ void SettingsManager::loadDefaults() {
     _settings.gear_ratio             = 1.0f;
     _settings.active_battery_profile = 0;
     _settings.voltage_trim_v         = -0.3f;
-    _settings.throttle_adc_channel   = 1; // Default to ADC2 as requested
+    _settings.throttle_adc_channel   = 0; // Default to ADC1 (standard VESC throttle)
 }
 
 void SettingsManager::begin() {
@@ -27,8 +27,10 @@ void SettingsManager::begin() {
 
     if (!_prefs.isKey("cfg_init")) {
         // First boot: save initial defaults
+        loadDefaults();
         save();
         _prefs.putBool("cfg_init", true);
+        _prefs.putBool("adc_v2_fixed", true);
         Serial.println("[SETTINGS] Initialized default NVS configuration.");
     } else {
         _settings.dash_style             = _prefs.getUChar("style", STYLE_ANALOG_DIAL);
@@ -43,7 +45,16 @@ void SettingsManager::begin() {
         _settings.gear_ratio             = _prefs.getFloat("gear", 1.0f);
         _settings.active_battery_profile = _prefs.getUChar("bat_prof", 0);
         _settings.voltage_trim_v         = _prefs.getFloat("v_trim", -0.3f);
-        _settings.throttle_adc_channel   = _prefs.getUChar("adc_ch", 1);
+        _settings.throttle_adc_channel   = _prefs.getUChar("adc_ch", 0);
+
+        // One-time automatic migration: fix boards that had adc_ch set to 1 by previous buggy default
+        if (!_prefs.getBool("adc_v2_fixed", false)) {
+            _settings.throttle_adc_channel = 0; // Force default to ADC1
+            _prefs.putUChar("adc_ch", 0);
+            _prefs.putBool("adc_v2_fixed", true);
+            Serial.println("[SETTINGS] Migrated throttle ADC channel to ADC1 (standard).");
+        }
+
         Serial.println("[SETTINGS] Loaded configuration from NVS flash.");
     }
 }
