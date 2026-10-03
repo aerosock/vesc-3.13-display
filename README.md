@@ -1,3 +1,6 @@
+>[!WARNING]  
+>for the dear anti-ai purists, this project was in part made with its help.
+
 # UART display for VESC-based controllers on Waveshare ESP32-S3-LCD-3.16 module
 <p align="center">
         <img src="https://github.com/user-attachments/assets/4cbeecfd-657c-41e2-86b3-c21ae2f0b7b6" width="48%" alt="image 1"
@@ -39,10 +42,12 @@ sda and scl pins on i2c port can be used as regular digital gpio ports as well, 
 There are 2 dashboard styles. 
 
 one more practical with the duty cycle bar on the top 
+
 <img width="820" height="320" alt="05_horizontal_field_weakening" src="https://github.com/user-attachments/assets/e9a89805-953f-4a46-9c36-872eba122e20" />
 
 
 and another one with an analog style tachometer-duty cycle scale. it also does cool needle swipe on start up like motorcycles and cars!!!!
+
 <img width="820" height="320" alt="03_analog_field_weakening" src="https://github.com/user-attachments/assets/b3408bc5-dd2b-44e6-8b0f-a9d9d4c600b9" />
 
 statistics screens and whatnot are pretty self explanatory so im not going to say anything about them
