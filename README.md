@@ -1,55 +1,46 @@
-# Waveshare ESP32-S3-LCD-3.16 · VESC eBike Dashboard
+# UART display for VESC-based controllers on Waveshare ESP32-S3-LCD-3.16 module
+<img width="906" height="599" alt="image" src="https://github.com/user-attachments/assets/4cbeecfd-657c-41e2-86b3-c21ae2f0b7b6" />
 
-Custom instrument cluster firmware for the **Waveshare ESP32-S3-LCD-3.16** (820×320 ST7701 RGB display), built for VESC-compatible motor controllers (tested on Flipsky 75100 V1).
+My spin on the VESC displays. 
 
-Communicates over hardware UART at 115200 baud, reads live telemetry via VESC protocol packets, and features onboard persistent settings, battery analytics, two cluster UI styles, and transparent USB / Wi-Fi passthrough bridges for VESC Tool configuration without unplugging the display.
+Simple 3D printed case, uses two MX style keyboard switches for navigation. Communicates with the VESC through UART, which does alright even on my 1m+ long wire harness. 
+
+Based on this module https://www.waveshare.com/product/esp32-related/boards-kits/esp32-s3/esp32-s3-lcd-3.16.htm
+820×320(20,5:8 ratio) ST7701 RGB display, ESP32-S3 microcontroller
+
+Tested on Flipsky 75100 V1(the cheapest crap ever) with firmware version 7. Might misbehave with other controllers because cuh.
+
+Shows live stats(speed, wattage, amperage, voltage, battery info), features long term statistics, capable of changing most basic VESC settings on the go, supports USB to UART bridge for programming through desktop VESC Tool as well as TCP WIFI connection for the mobile app.
 
 ---
 
-## Hardware & Wiring
+## Wiring
+<img width="683" height="1253" alt="schematic" src="https://github.com/user-attachments/assets/f898032d-5353-4e6c-a166-ca9a4cf585e8" />
+I made this beautiful illustration because im too lazy to open easyeda. basically really simple. 
 
-### Pinout Reference
+the screen sips like 300-500mA tops so you can feed it from the on board 5v from the vesc from my experience
 
-| Function | Pin | Connector on Waveshare Board | Notes |
-| :--- | :--- | :--- | :--- |
-| **VESC UART TX** | **GPIO 43** | PH1.0 4-pin UART (labeled TXD) | Connect to Flipsky COMM **RX** |
-| **VESC UART RX** | **GPIO 44** | PH1.0 4-pin UART (labeled RXD) | Connect to Flipsky COMM **TX** |
-| **GND** | **GND** | PH1.0 4-pin UART / USB | Common ground with VESC |
-| **Button 1** | **GPIO 7** | SH1.0 4-pin I2C (SCL pin) | Active LOW (internal pullup), connect button to GND |
-| **Button 2** | **GPIO 15** | SH1.0 4-pin I2C (SDA pin) | Active LOW (internal pullup), connect button to GND |
-| **Display Panel** | **ST7701** | Internal RGB565 bus | 820×320, 16MB Flash, 8MB Octal PSRAM |
+the 3v3 on the uart connector is a power output not input so you dont want to connect it anywhere
 
-> **Warning on Power Supply:**  
-> The 3.16" LCD backlight draws 350–500mA at full brightness. **Do not** power the board from the VESC COMM port's internal 5V pin. The controller's internal 5V regulator is meant for Hall sensors and logic, and pulling 500mA through it can overheat the controller or cause brownouts. Use an external 12V→5V DC-DC step-down converter from your main battery or power via USB 5V.
+the only 5v input is unfortunately on the usb plug and it means you have to do solderslop if you dont have the correct size plug for it(waveshare only bundles 2 plugs, for uart and i2c)
+
 
 ---
 
 ## Screens & Features
 
-### 1. Main Ride Dashboard (`SCREEN_RIDE_DASH`)
-Selectable in Settings:
-* **Style A (Analog Dial):** Left-hugging 180° tachometer arc (0–120% duty cycle, redline past 100% for Field Weakening). Digital duty readout sits inside the central hub cap. Giant high-contrast digital speedometer, battery percentage and pack voltage, real-time power (W) and motor phase amps (A), live throttle bar, and trip distance.
-* **Style B (Horizontal Bar):** Wide horizontal duty bar across the top with redline FW zone, large center speedometer, and status metrics below.
+There are 2 dashboard styles. 
 
-### 2. Energy & Battery Analytics (`SCREEN_ENERGY_STATS`)
-* Real-time consumption efficiency (**Wh/km**).
-* Total trip energy consumed (Wh) and charge used (Ah).
-* Remaining usable energy (Wh) and dynamic range estimation (km).
-* Battery State of Health (SoH %) and nominal vs. learned pack capacity.
+one more practical with the duty cycle bar on the top 
+<img width="820" height="320" alt="03_analog_field_weakening" src="https://github.com/user-attachments/assets/b3408bc5-dd2b-44e6-8b0f-a9d9d4c600b9" />
+and another one with an analog style tachometer-duty cycle scale. it also does cool needle swipe on start up like motorcycles and cars!!!!
+<img width="820" height="320" alt="05_horizontal_field_weakening" src="https://github.com/user-attachments/assets/e9a89805-953f-4a46-9c36-872eba122e20" />
 
-### 3. Power & Dynamics Analytics (`SCREEN_PERF_STATS`)
-* Peak electrical power recorded this trip (W / kW).
-* Peak battery current (A) and peak motor phase current (A).
-* Dual thermal monitoring: Motor temperature and VESC MOSFET temperature with color-coded warnings.
-* Trip odometer and lifetime vehicle odometer (stored in flash).
+statistics screens and whatnot are pretty self explanatory so im not going to say anything about them
 
-### 4. Interactive Settings Menu (`SCREEN_SETTINGS_MENU`)
-Divided into 5 submenus with inline editing and NVS flash persistence:
-1. **Power & Drive Limits:** Battery current limit (A), Phase current limit (A), Field Weakening current (A), Speed limit (km/h), Throttle ADC input channel selection.
-2. **Display & UI:** Cluster style toggle (Analog / Horizontal), Screen backlight brightness (20%–100%).
-3. **Battery Profiles:** Dual profile switcher (e.g. 52V Fresh pack vs. Daily pack), nominal Wh ratings, voltage calibration trim, learning reset.
-4. **Wheel & Gearing:** Motor pole pairs (e.g. 15 for BBS / direct drive), tire diameter (mm), mechanical gear ratio.
-5. **System & Diagnostics:** Pull/sync live motor limits from VESC (`COMM_GET_MCCONF`), start USB passthrough bridge, start Wi-Fi bridge, reset trip stats, factory reset, hardware link status.
+settings are a pretty basic menu that can be opened by holding down button 1 and scrolled with the buttons respectively up/down. up+down to choose/save. hold down in menu to go back and on dashboard to reset trip.
+
+## ai slop excerpt regarding other features
 
 ### 5. Transparent VESC USB Bridge (`SCREEN_VESC_BRIDGE`)
 * Plugs into your PC with a USB-C cable while connected to the bike.
@@ -66,34 +57,29 @@ Divided into 5 submenus with inline editing and NVS flash persistence:
 
 ---
 
-## Controls & Navigation
+## Physical case
 
-### Normal Riding Mode
-| Button Action | Result |
-| :--- | :--- |
-| **BTN1 Short** | Previous Screen (`Ride Dash` ↔ `Perf Stats` ↔ `Energy Stats`) |
-| **BTN2 Short** | Next Screen (`Ride Dash` → `Energy Stats` → `Perf Stats`) |
-| **BTN1 Long (>600ms)** | Open Settings Menu |
-| **BTN2 Long (>600ms)** | Reset Trip Distance & Trip Statistics |
-| **BTN1 + BTN2 Short** | Quick Toggle Battery Profile (Profile 1 ↔ Profile 2) |
+<img width="1467" height="1697" alt="image" src="https://github.com/user-attachments/assets/8b37e315-7533-42be-bc11-a173442a433d" />
 
-### In Settings Menu
-| Button Action | Result |
-| :--- | :--- |
-| **BTN1 Short** | Cursor UP (or Decrement value in Edit Mode) |
-| **BTN2 Short** | Cursor DOWN (or Increment value in Edit Mode) |
-| **BTN1 + BTN2 Short** | Select / Enter Submenu / Toggle Edit Mode / Save |
-| **BTN1 Long** | Cancel Edit / Back to Root Menu |
-| **BTN2 Long** | Exit Settings and Return to Ride Dashboard |
+pretty simple design. 7mm inner standoffs holding up the board to leave space for wiring. M2x10 screws get there... almost perfectly)
 
-### In Bridge Mode (USB or Wi-Fi)
-| Button Action | Result |
-| :--- | :--- |
-| **Hold BTN1 / BTN2** or **[1+2]** | Stop bridge, turn off Wi-Fi radio, and return to Ride Dashboard |
+has mounting points for handlebar mounts, basically 2 small pegs and a long m3 screw going through the mount and screwing on with a nut on the inside. it hold fine. the mounts i have for regular 31.8mm handlebars. the gap i left in them is pretty small but when printing from petg they slide onto the handlebars even at the thickest point alright. secured with a pair M3 screw+nut.
+
+buttons are massacred mx style switches. i used outemu blues because i have a lot of them and they have large windows for rgb diodes which can be cut off to make the casing footprint only 10.5x14 as opposed to default 14x14 which uhhh saves some space. you can just modify the casing and the top plate a bit to fit them fully or redesign for some better buttons. keycaps on mine i also modeled, nothing much to say about them except for the fact that i printed them with a circular pattern because the stem was getting messed up with other infill patterns. the switches are then glued into the casing really at any depth you like, just make sure that there's enough space for keycaps.
+
+everything uses M3 hardware except for the pcb standoffs. i dont know lengths but if you dont already have a big box of different M3 bolts you should definitely get one.
+
+### Important thing to note is that im a dumbass and most of the holes are a bit too small. i just drilled them out to proper diameters with a drill.
+
+also im not sure about the exact waterproofness of the case. i put silicone rubber around all of the holes and gaps but i have yet to test how they hold up. maybe you could just make some gasket from like tpu and that would be better. 
+
+### how it looks on the bike assembled
+<img width="960" height="1280" alt="image" src="https://github.com/user-attachments/assets/9714daea-9ef4-49aa-8510-316476684713" />
+<img width="960" height="1280" alt="image" src="https://github.com/user-attachments/assets/4fb0b34e-616f-43dc-884f-3dcda7928919" />
 
 ---
 
-## Building and Flashing
+## Building and Flashing(had ai generate this one and the next section. it's either self explanatory basics and you dont need to read it or you will ask ai how to do it anyway)
 
 ### Requirements
 * [PlatformIO CLI](https://platformio.org/) (`pio`) or VS Code with the PlatformIO extension.
@@ -133,9 +119,6 @@ chmod +x scripts/setup_fedora.sh
 * **ESP32-S3 doesn't enter bootloader automatically:**  
   Hold down the **BOOT** button (GPIO 0), press and release the **RESET** button, then release **BOOT**. This forces the chip into ROM download mode. Run `pio run -t upload` again.
 
-* **Throttle gauge stuck at 33%:**  
-  The firmware defaults to VESC ADC channel 1 (Channel index `0`). If your throttle is connected to ADC2 on the VESC or if ADC values are inverted, verify your VESC Tool ADC app settings under *App Settings → ADC*. The display automatically migrates older NVS configurations to ADC channel 0 on boot.
-
 * **Writing motor settings in VESC Tool fails over USB:**  
   VESC Tool configuration writes send a single 500–650+ byte burst. In standard Arduino ESP32 cores, USB CDC buffers default to 256 bytes, truncating the write packet. This firmware configures 4096-byte queues before `Serial.begin()`. If you modify `main.cpp`, do not reduce buffer sizes.
 
@@ -153,3 +136,18 @@ chmod +x scripts/setup_fedora.sh
   ./tools/simulator/build_and_run.sh
   ```
   Screenshots of every screen state are rendered to `tools/simulator/screenshots/`.
+
+
+# the end
+
+  that's about it. shout out to mr antigravity for coding and mr ENGINEER jooj from discord for moral and technical support.
+
+  if you have any improvements/bugs - issues and bugs on github are very welcome. i daily drive this thing myself and will try to continuously improve on it. 
+
+  ## known issues/TODO list: 
+  - add ON/OFF functionality of some sorts?
+  - fix 3d models to be less shit
+  - work on the UI since element spacing and whatnot kinda suck
+  - test WIFI and USB bridges further. had some issues with them that were allegedly fixed but not 100%
+  - make some better pictures lmao with a clean camera lens 
+  
