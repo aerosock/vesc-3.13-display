@@ -107,7 +107,8 @@ void loop() {
     if (nav != NAV_NONE) {
         if (Vesc.isBridgeActive()) {
             if (nav == NAV_BTN2_LONG || nav == NAV_BOTH_PRESSED || nav == NAV_BTN1_LONG) {
-                Vesc.exitBridgeMode();
+                if (Vesc.isUsbBridgeActive()) Vesc.exitBridgeMode();
+                if (Vesc.isWifiBridgeActive()) Vesc.exitWifiBridgeMode();
                 telemetry.screen = SCREEN_RIDE_DASH;
                 Renderer.markScreenDirty();
                 Renderer.invalidateCache();
@@ -168,14 +169,7 @@ void loop() {
 
     // 2. Update Telemetry or Forward Bridge Traffic
     if (Vesc.isBridgeActive()) {
-        // Fast drain loop for high-throughput VESC configuration transfers
-        for (int p = 0; p < 20; p++) {
-            if (Serial.available() > 0 || VESC_UART_PORT.available() > 0) {
-                Vesc.updateBridge();
-            } else {
-                break;
-            }
-        }
+        Vesc.updateBridge();
     } else {
         Vesc.update(telemetry);
     }

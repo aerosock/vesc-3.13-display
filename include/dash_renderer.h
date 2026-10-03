@@ -57,6 +57,10 @@ private:
     void initVescBridgeScreen(const DashTelemetry &telemetry);
     void renderVescBridgeScreen(const DashTelemetry &telemetry);
 
+    // Screen 5: Transparent Wi-Fi TCP <-> UART Bridge for VESC Tool
+    void initWifiBridgeScreen(const DashTelemetry &telemetry);
+    void renderWifiBridgeScreen(const DashTelemetry &telemetry);
+
     // Common UI Helpers
     void drawCard(int x, int y, int w, int h, uint16_t bg, uint16_t border);
     void drawValWithUnit(int x, int y, int numPadW, int unitPadW, const char *numStr, const char *unitStr, uint16_t numCol, uint16_t unitCol, uint16_t bgCol = 0x0821);
@@ -155,6 +159,9 @@ private:
     // VESC Bridge Display State
     uint32_t _bridge_last_pc_bytes;
     uint32_t _bridge_last_vesc_bytes;
+    uint32_t _bridge_last_wifi_rx;
+    uint32_t _bridge_last_wifi_tx;
+    int8_t   _bridge_last_wifi_conn;
 };
 
 extern DashboardRenderer Renderer;

@@ -211,6 +211,15 @@ void DashboardRenderer::render(const DashTelemetry &telemetry) {
             renderVescBridgeScreen(telemetry);
             break;
 
+        case SCREEN_WIFI_BRIDGE:
+            if (_screen_dirty) {
+                _canvas->fillScreen(COLOR_BG);
+                initWifiBridgeScreen(telemetry);
+                _screen_dirty = false;
+            }
+            renderWifiBridgeScreen(telemetry);
+            break;
+
         default:
             break;
     }
@@ -1137,7 +1146,7 @@ static int getSubItemCount(uint8_t sub_id) {
         case 1: return 2;
         case 2: return 5;
         case 3: return 3;
-        case 4: return 5;
+        case 4: return 6;
         default: return 0;
     }
 }
@@ -1296,18 +1305,24 @@ static void getSubItemDetails2Lines(uint8_t sub_id, uint8_t item_id,
                     snprintf(d2, d2_sz, "Press [1+2] to start");
                     break;
                 case 2:
+                    snprintf(title, title_sz, "VESC Wi-Fi Bridge");
+                    snprintf(val, val_sz, "START WI-FI BRIDGE");
+                    snprintf(d1, d1_sz, "Wireless TCP Bridge");
+                    snprintf(d2, d2_sz, "AP: 192.168.4.1:6510");
+                    break;
+                case 3:
                     snprintf(title, title_sz, "Reset Trip Statistics");
                     snprintf(val, val_sz, "RESET TRIP STATS");
                     snprintf(d1, d1_sz, "Clear trip distance");
                     snprintf(d2, d2_sz, "Press [1+2] to clear");
                     break;
-                case 3:
+                case 4:
                     snprintf(title, title_sz, "Factory Reset");
                     snprintf(val, val_sz, "RESTORE DEFAULTS");
                     snprintf(d1, d1_sz, "Restore defaults");
                     snprintf(d2, d2_sz, "Press [1+2] to reset");
                     break;
-                case 4:
+                case 5:
                     snprintf(title, title_sz, "VESC Hardware Link");
                     snprintf(val, val_sz, telemetry.vesc_connected ? "COMM HEALTHY" : "OFFLINE");
                     snprintf(d1, d1_sz, "Flipsky 75100 V1");
@@ -1729,16 +1744,25 @@ void DashboardRenderer::handleMenuNav(NavAction action, DashTelemetry &telemetry
                 _screen_dirty = true;
                 _cache.invalidate();
             } else if (_menu_root_idx == 4 && _menu_sub_idx == 2) {
+                // Start VESC Wi-Fi Bridge
+                _menu_in_sub = false;
+                _menu_edit_mode = false;
+                Buttons.setEditMode(false);
+                Vesc.enterWifiBridgeMode();
+                telemetry.screen = SCREEN_WIFI_BRIDGE;
+                _screen_dirty = true;
+                _cache.invalidate();
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 3) {
                 // Reset Trip Stats
                 telemetry.trip_km = 0.0f;
                 telemetry.stats.reset();
                 _menu_dirty = true;
-            } else if (_menu_root_idx == 4 && _menu_sub_idx == 3) {
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 4) {
                 // Restore Factory Defaults
                 Settings.resetToDefaults();
                 _display->setBrightness(map(Settings.get().brightness_pct, 0, 100, 0, 255));
                 _menu_dirty = true;
-            } else if (_menu_root_idx == 4 && _menu_sub_idx == 4) {
+            } else if (_menu_root_idx == 4 && _menu_sub_idx == 5) {
                 // VESC Status is info-only
             } else {
                 _menu_edit_mode = true;
@@ -1848,6 +1872,113 @@ void DashboardRenderer::renderVescBridgeScreen(const DashTelemetry &telemetry) {
         _canvas->setTextPadding(320);
         _canvas->drawString(buf, 436, 168, &fonts::Font6);
         _canvas->setTextPadding(0);
+    }
+}
+
+// ==============================================================================
+// SCREEN 5: VESC TOOL WIRELESS WI-FI BRIDGE
+// ==============================================================================
+void DashboardRenderer::initWifiBridgeScreen(const DashTelemetry &telemetry) {
+    // Header Bar
+    _canvas->setTextColor(COLOR_CYAN, COLOR_BG);
+    _canvas->drawString("VESC TOOL WIRELESS WI-FI BRIDGE", 20, 14, &fonts::Font4);
+
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_BG);
+    _canvas->setTextPadding(300);
+    _canvas->drawRightString("PORT 6510 (TCP <-> UART)", 780, 14, &fonts::Font4);
+    _canvas->setTextPadding(0);
+
+    _canvas->drawFastHLine(20, 44, 760, COLOR_BORDER);
+
+    // Left Card: Wi-Fi Access Point Details
+    drawCard(20, 54, 370, 186, COLOR_SURFACE, COLOR_BORDER);
+    _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+    _canvas->drawString("WI-FI ACCESS POINT (AP)", 36, 68, &fonts::Font4);
+    _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+    _canvas->drawString("SSID:    VESC-DASH-AP", 36, 96, &fonts::Font4);
+    _canvas->drawString("IP:      192.168.4.1", 36, 122, &fonts::Font4);
+    _canvas->drawString("Port:    6510 (VESC standard)", 36, 148, &fonts::Font4);
+    _canvas->drawString("Auth:    Open (No password)", 36, 174, &fonts::Font4);
+    _canvas->drawString("Radio:   2.4 GHz SoftAP", 36, 200, &fonts::Font4);
+
+    // Right Card: Client Connection & Traffic Throughput
+    drawCard(410, 54, 370, 186, COLOR_SURFACE, COLOR_BORDER);
+    _canvas->setTextColor(COLOR_GREEN, COLOR_SURFACE);
+    _canvas->drawString("VESC TOOL CLIENT", 426, 68, &fonts::Font4);
+
+    // Bottom Help Banner
+    _canvas->fillRoundRect(20, 252, 760, 54, 6, 0x18E3);
+    _canvas->drawRoundRect(20, 252, 760, 54, 6, COLOR_AMBER);
+    _canvas->setTextColor(COLOR_AMBER, 0x18E3);
+    _canvas->drawCenterString("[Hold BTN1] or [1+2] to Exit Bridge & Power Off Wi-Fi", 400, 268, &fonts::Font4);
+
+    _bridge_last_wifi_rx = 0xFFFFFFFF;
+    _bridge_last_wifi_tx = 0xFFFFFFFF;
+    _bridge_last_wifi_conn = -1;
+}
+
+void DashboardRenderer::renderWifiBridgeScreen(const DashTelemetry &telemetry) {
+    bool connected = Vesc.isWifiClientConnected();
+    int8_t conn_state = connected ? 1 : 0;
+    uint32_t rx_bytes = Vesc.getBridgeWifiToVescBytes();
+    uint32_t tx_bytes = Vesc.getBridgeVescToWifiBytes();
+
+    if (conn_state != _bridge_last_wifi_conn) {
+        _bridge_last_wifi_conn = conn_state;
+        _canvas->fillRoundRect(412, 92, 366, 142, 6, COLOR_SURFACE);
+
+        if (connected) {
+            _canvas->setTextColor(COLOR_GREEN, COLOR_SURFACE);
+            _canvas->drawString("STATUS: CONNECTED", 426, 96, &fonts::Font4);
+
+            _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+            char ipBuf[40];
+            snprintf(ipBuf, sizeof(ipBuf), "Client IP: %s", Vesc.getWifiClientIp());
+            _canvas->drawString(ipBuf, 426, 126, &fonts::Font4);
+
+            _canvas->drawString("APP -> VESC:", 426, 156, &fonts::Font4);
+            _canvas->drawString("VESC -> APP:", 426, 186, &fonts::Font4);
+
+            _bridge_last_wifi_rx = 0xFFFFFFFF;
+            _bridge_last_wifi_tx = 0xFFFFFFFF;
+        } else {
+            _canvas->setTextColor(COLOR_AMBER, COLOR_SURFACE);
+            _canvas->drawString("STATUS: AWAITING CLIENT...", 426, 96, &fonts::Font4);
+            _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+            _canvas->drawString("1. Connect device to SSID:", 426, 126, &fonts::Font4);
+            _canvas->setTextColor(COLOR_CYAN, COLOR_SURFACE);
+            _canvas->drawString("   \"VESC-DASH-AP\"", 426, 154, &fonts::Font4);
+            _canvas->setTextColor(COLOR_LIGHT_GRAY, COLOR_SURFACE);
+            _canvas->drawString("2. VESC Tool -> TCP 6510", 426, 186, &fonts::Font4);
+        }
+    }
+
+    if (connected) {
+        if (rx_bytes != _bridge_last_wifi_rx) {
+            _bridge_last_wifi_rx = rx_bytes;
+            char buf[32];
+            if (rx_bytes < 1024) snprintf(buf, sizeof(buf), "%u B", (unsigned)rx_bytes);
+            else if (rx_bytes < 1048576) snprintf(buf, sizeof(buf), "%.1f KB", rx_bytes / 1024.0f);
+            else snprintf(buf, sizeof(buf), "%.2f MB", rx_bytes / 1048576.0f);
+
+            _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+            _canvas->setTextPadding(160);
+            _canvas->drawString(buf, 580, 156, &fonts::Font4);
+            _canvas->setTextPadding(0);
+        }
+
+        if (tx_bytes != _bridge_last_wifi_tx) {
+            _bridge_last_wifi_tx = tx_bytes;
+            char buf[32];
+            if (tx_bytes < 1024) snprintf(buf, sizeof(buf), "%u B", (unsigned)tx_bytes);
+            else if (tx_bytes < 1048576) snprintf(buf, sizeof(buf), "%.1f KB", tx_bytes / 1024.0f);
+            else snprintf(buf, sizeof(buf), "%.2f MB", tx_bytes / 1048576.0f);
+
+            _canvas->setTextColor(COLOR_WHITE, COLOR_SURFACE);
+            _canvas->setTextPadding(160);
+            _canvas->drawString(buf, 580, 186, &fonts::Font4);
+            _canvas->setTextPadding(0);
+        }
     }
 }
 

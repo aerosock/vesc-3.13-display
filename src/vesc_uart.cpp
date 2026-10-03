@@ -60,9 +60,15 @@ VescHandler::VescHandler()
       _bridge_active(false),
       _bridge_pc_to_vesc(0),
       _bridge_vesc_to_pc(0),
+      _wifi_bridge_active(false),
+      _wifi_client_connected(false),
+      _bridge_wifi_to_vesc(0),
+      _bridge_vesc_to_wifi(0),
       _sync_status(SYNC_IDLE),
       _mcconf_req_ms(0),
-      _sync_ms(0) {}
+      _sync_ms(0) {
+    _wifi_client_ip[0] = '\0';
+}
 
 void VescHandler::begin() {
     VESC_UART_PORT.setRxBufferSize(4096);
@@ -505,6 +511,12 @@ void VescHandler::requestMcconf() {
     Serial.println("[VESC_UART] Sent COMM_GET_MCCONF request to VESC.");
 }
 
+#if !defined(LGFX_LINUX_FB) && !defined(SIMULATOR)
+#include <WiFi.h>
+static WiFiServer _wifi_server(6510);
+static WiFiClient _wifi_client;
+#endif
+
 // ==============================================================================
 // Transparent USB CDC <-> UART Passthrough Bridge for VESC Tool
 // ==============================================================================
@@ -530,7 +542,7 @@ void VescHandler::exitBridgeMode() {
     _last_poll_ms = millis();
 }
 
-void VescHandler::updateBridge() {
+void VescHandler::updateUsbBridge() {
     if (!_bridge_active) return;
 
     // 1. Forward USB CDC (PC / VESC Tool) -> Flipsky 75100 VESC UART
@@ -555,6 +567,113 @@ void VescHandler::updateBridge() {
         } else {
             break;
         }
+    }
+}
+
+// ==============================================================================
+// Transparent Wireless Wi-Fi TCP <-> UART Passthrough Bridge for VESC Tool
+// ==============================================================================
+void VescHandler::enterWifiBridgeMode() {
+    _wifi_bridge_active = true;
+    _wifi_client_connected = false;
+    _wifi_client_ip[0] = '\0';
+    _bridge_wifi_to_vesc = 0;
+    _bridge_vesc_to_wifi = 0;
+
+    // Ensure 4KB UART queues for high-volume configuration bursts
+    VESC_UART_PORT.setRxBufferSize(4096);
+    VESC_UART_PORT.setTxBufferSize(4096);
+
+    // Allow in-flight telemetry to conclude, then flush buffers
+    delay(30);
+    while (Serial.available()) Serial.read();
+    while (VESC_UART_PORT.available()) VESC_UART_PORT.read();
+
+#if !defined(LGFX_LINUX_FB) && !defined(SIMULATOR)
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("VESC-DASH-AP");
+    _wifi_server.begin(6510);
+    _wifi_server.setNoDelay(true);
+    Serial.println("[WIFI_BRIDGE] SoftAP started: SSID='VESC-DASH-AP', Port=6510");
+#endif
+}
+
+void VescHandler::exitWifiBridgeMode() {
+    _wifi_bridge_active = false;
+    _wifi_client_connected = false;
+    _wifi_client_ip[0] = '\0';
+    _last_poll_ms = millis();
+
+#if !defined(LGFX_LINUX_FB) && !defined(SIMULATOR)
+    if (_wifi_client) {
+        _wifi_client.stop();
+    }
+    _wifi_server.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
+    Serial.println("[WIFI_BRIDGE] Wi-Fi powered down completely.");
+#endif
+}
+
+void VescHandler::updateWifiBridge() {
+#if !defined(LGFX_LINUX_FB) && !defined(SIMULATOR)
+    if (!_wifi_bridge_active) return;
+
+    if (_wifi_server.hasClient()) {
+        if (_wifi_client && _wifi_client.connected()) {
+            WiFiClient rej = _wifi_server.available();
+            rej.stop();
+        } else {
+            _wifi_client = _wifi_server.available();
+            _wifi_client.setNoDelay(true);
+            _wifi_client_connected = true;
+            IPAddress ip = _wifi_client.remoteIP();
+            snprintf(_wifi_client_ip, sizeof(_wifi_client_ip), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+            Serial.printf("[WIFI_BRIDGE] Client connected: %s\n", _wifi_client_ip);
+        }
+    }
+
+    if (_wifi_client && _wifi_client.connected()) {
+        _wifi_client_connected = true;
+
+        // 1. Forward TCP -> VESC UART (bulk read/write loop)
+        while (_wifi_client.available() > 0) {
+            uint8_t buf[512];
+            int bytes_read = _wifi_client.read(buf, sizeof(buf));
+            if (bytes_read > 0) {
+                VESC_UART_PORT.write(buf, bytes_read);
+                _bridge_wifi_to_vesc += bytes_read;
+            } else {
+                break;
+            }
+        }
+
+        // 2. Forward VESC UART -> TCP (bulk read/write loop)
+        while (VESC_UART_PORT.available() > 0) {
+            uint8_t buf[512];
+            size_t n = VESC_UART_PORT.read(buf, sizeof(buf));
+            if (n > 0) {
+                _wifi_client.write(buf, n);
+                _bridge_vesc_to_wifi += n;
+            } else {
+                break;
+            }
+        }
+    } else {
+        if (_wifi_client_connected) {
+            _wifi_client_connected = false;
+            _wifi_client_ip[0] = '\0';
+            Serial.println("[WIFI_BRIDGE] Client disconnected.");
+        }
+    }
+#endif
+}
+
+void VescHandler::updateBridge() {
+    if (_bridge_active) {
+        updateUsbBridge();
+    } else if (_wifi_bridge_active) {
+        updateWifiBridge();
     }
 }
 

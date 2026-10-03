@@ -12,13 +12,35 @@
 #include "buttons.h"
 #include "vesc_uart.h"
 
-VescHandler::VescHandler() : _bridge_active(false), _sync_status(SYNC_IDLE), _sync_ms(0), _mcconf_req_ms(0), _bridge_pc_to_vesc(0), _bridge_vesc_to_pc(0) {}
+VescHandler::VescHandler()
+    : _bridge_active(false),
+      _bridge_pc_to_vesc(0),
+      _bridge_vesc_to_pc(0),
+      _wifi_bridge_active(false),
+      _wifi_client_connected(false),
+      _bridge_wifi_to_vesc(0),
+      _bridge_vesc_to_wifi(0),
+      _sync_status(SYNC_IDLE),
+      _sync_ms(0),
+      _mcconf_req_ms(0) {
+    _wifi_client_ip[0] = '\0';
+}
 void VescHandler::begin() {}
 void VescHandler::update(DashTelemetry &) {}
 void VescHandler::setSimThrottle(float) {}
 void VescHandler::enterBridgeMode() { _bridge_active = true; }
 void VescHandler::exitBridgeMode() { _bridge_active = false; }
+void VescHandler::enterWifiBridgeMode() {
+    _wifi_bridge_active = true;
+    _wifi_client_connected = true;
+    strncpy(_wifi_client_ip, "192.168.4.2", sizeof(_wifi_client_ip));
+    _bridge_wifi_to_vesc = 1420;
+    _bridge_vesc_to_wifi = 3680;
+}
+void VescHandler::exitWifiBridgeMode() { _wifi_bridge_active = false; _wifi_client_connected = false; }
 void VescHandler::updateBridge() {}
+void VescHandler::updateUsbBridge() {}
+void VescHandler::updateWifiBridge() {}
 void VescHandler::requestMcconf() { _sync_status = SYNC_SUCCESS; }
 VescHandler Vesc;
 
@@ -387,6 +409,14 @@ int main(int argc, char **argv) {
     Renderer.handleMenuNav(NAV_BOTH_PRESSED, t); // enter Battery Profiles submenu
     renderAndSave("12_settings_battery_profiles", t);
 
-    printf("\n[SUCCESS] All 12 scenarios rendered and saved to tools/simulator/screenshots/\n");
+    // ----------------------------------------------------
+    // Scenario 13: Screen 5 - VESC Wi-Fi Bridge
+    // ----------------------------------------------------
+    Vesc.enterWifiBridgeMode();
+    t.screen = SCREEN_WIFI_BRIDGE;
+    Renderer.markScreenDirty();
+    renderAndSave("13_wifi_bridge", t);
+
+    printf("\n[SUCCESS] All 13 scenarios rendered and saved to tools/simulator/screenshots/\n");
     return 0;
 }

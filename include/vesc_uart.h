@@ -29,10 +29,22 @@ public:
     // Transparent USB CDC <-> UART Bridge for VESC Tool
     void enterBridgeMode();
     void exitBridgeMode();
-    bool isBridgeActive() const { return _bridge_active; }
+    bool isBridgeActive() const { return _bridge_active || _wifi_bridge_active; }
+    bool isUsbBridgeActive() const { return _bridge_active; }
     void updateBridge();
+    void updateUsbBridge();
     uint32_t getBridgePcToVescBytes() const { return _bridge_pc_to_vesc; }
     uint32_t getBridgeVescToPcBytes() const { return _bridge_vesc_to_pc; }
+
+    // Transparent Wireless Wi-Fi TCP <-> UART Bridge for VESC Tool
+    void enterWifiBridgeMode();
+    void exitWifiBridgeMode();
+    bool isWifiBridgeActive() const { return _wifi_bridge_active; }
+    bool isWifiClientConnected() const { return _wifi_client_connected; }
+    const char *getWifiClientIp() const { return _wifi_client_ip; }
+    uint32_t getBridgeWifiToVescBytes() const { return _bridge_wifi_to_vesc; }
+    uint32_t getBridgeVescToWifiBytes() const { return _bridge_vesc_to_wifi; }
+    void updateWifiBridge();
 
     // On-Demand Settings Pull from VESC Controller
     void requestMcconf();
@@ -63,6 +75,13 @@ private:
     bool     _bridge_active;
     uint32_t _bridge_pc_to_vesc;
     uint32_t _bridge_vesc_to_pc;
+
+    // Wi-Fi Bridge State
+    bool     _wifi_bridge_active;
+    bool     _wifi_client_connected;
+    char     _wifi_client_ip[24];
+    uint32_t _bridge_wifi_to_vesc;
+    uint32_t _bridge_vesc_to_wifi;
 
     // Configuration Pull State
     VescSyncStatus _sync_status;
