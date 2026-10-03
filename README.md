@@ -173,3 +173,4 @@ chmod +x scripts/setup_fedora.sh
   - test WIFI and USB bridges further. had some issues with them that were allegedly fixed but not 100%
   - make some better pictures lmao with a clean camera lens 
   - add support for displaying regen braking(my bike isnt DD)
+  - automatically adjusting the duty cycle display depending on whether field weakening is on or off
