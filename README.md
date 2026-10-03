@@ -84,6 +84,8 @@ also im not sure about the exact waterproofness of the case. i put silicone rubb
 
 as already said i printed with petg, i think 0.20mm layer height, 100% infill ofc. had a hard time getting the top frame to stick to the PEI plate so i had to print it with a skirt.
 
+i provided the models for the top frame, bottom casing and the mounting brackets in STL and STEP. also here's the [onshape link](https://cad.onshape.com/documents/30012e10ce4cb7aa290a9fdc/w/881d1dbb9680ce4c04a9ae5d/e/2c86da4f851fc89c557b4d4e?renderMode=0&uiState=6ac1740a641697b139c08db8) for easier further modification
+
 ### how it looks on the bike assembled
 <img width="960" height="1280" alt="image" src="https://github.com/user-attachments/assets/9714daea-9ef4-49aa-8510-316476684713" />
 <img width="960" height="1280" alt="image" src="https://github.com/user-attachments/assets/4fb0b34e-616f-43dc-884f-3dcda7928919" />
@@ -165,4 +167,4 @@ chmod +x scripts/setup_fedora.sh
   - work on the UI since element spacing and whatnot kinda suck
   - test WIFI and USB bridges further. had some issues with them that were allegedly fixed but not 100%
   - make some better pictures lmao with a clean camera lens 
-  
+  - add support for displaying regen braking(my bike isnt DD)
