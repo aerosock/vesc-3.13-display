@@ -174,3 +174,4 @@ chmod +x scripts/setup_fedora.sh
   - make some better pictures lmao with a clean camera lens 
   - add support for displaying regen braking(my bike isnt DD)
   - automatically adjusting the duty cycle display depending on whether field weakening is on or off
+  - battery percentage and wh numbers seem to be at the very least extremely innaccurate
